@@ -4,7 +4,9 @@ Central de notícias estática e instalável, com editorias para Alagoas, Zona d
 
 ## Hospedagem no GitHub Pages
 
-Envie esta pasta para a branch padrão do repositório no GitHub. Em **Settings → Pages**, escolha **GitHub Actions** como fonte de publicação. O fluxo em `.github/workflows/pages.yml` é executado ao enviar alterações para a branch padrão, gera e valida `data/latest-news.json` e publica o site com esse arquivo. Confira em **Actions → Atualizar notícias e publicar** se a execução terminou com sucesso; a etapa **Validar snapshot de notícias** confirma que o feed está dentro da publicação. HTTPS é obrigatório para instalar o PWA e usar o service worker e as notificações.
+Em **Settings → Pages**, escolha **GitHub Actions** como fonte de publicação. Além da publicação normal do Pages, este repositório precisa conter `.github/workflows/pages.yml` e `scripts/refresh-news.mjs`: esse workflow coleta os feeds, gera e valida `data/latest-news.json` e publica o site com o JSON. Ele é executado ao enviar alterações à branch padrão, a cada 5 minutos e manualmente em **Actions → Atualizar notícias e publicar → Run workflow**.
+
+**Diagnóstico importante:** se a aba Actions mostrar somente `pages-build-deployment`, o Pages está publicando os arquivos do site, mas o workflow que coleta as notícias ainda não foi enviado ao repositório. `pages-build-deployment` não gera o feed. Confirme que `.github/workflows/pages.yml` e `scripts/refresh-news.mjs` aparecem na branch padrão e que a execução **Atualizar notícias e publicar** termina com sucesso. Depois, `https://SEU-USUARIO.github.io/SEU-REPOSITORIO/data/latest-news.json` deve exibir o JSON de notícias, não retornar 404. HTTPS é obrigatório para instalar o PWA e usar o service worker e as notificações.
 
 O endereço dos dados é resolvido a partir do caminho de `app.js`, para funcionar tanto em domínios próprios quanto em repositórios publicados em subdiretórios do GitHub Pages.
 
