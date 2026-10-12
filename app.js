@@ -7,25 +7,28 @@ const CARD_DIMENSIONS = {
 };
 const DEFAULT_CARD_TEMPLATE = {
   format: "feed",
-  background: "#102447",
+  background: "#11131a",
   textColor: "#ffffff",
+  accentColor: "#ff5b32",
   alignment: "center",
-  titleSize: 68,
-  imageHeight: 40,
+  titleSize: 66,
+  imageHeight: 100,
   profile: "",
-  imageX: 0.06,
-  imageY: 0.035,
+  imageX: 0,
+  imageY: 0,
   titleX: 0.5,
-  titleY: 0.47,
+  titleY: 0.49,
   summaryX: 0.5,
-  summaryY: 0.74,
-  logoX: 0.08,
-  logoY: 0.91,
+  summaryY: 0.71,
+  sourceX: 0.5,
+  sourceY: 0.355,
+  logoX: 0.41,
+  logoY: 0.09,
   signatureX: 0.5,
-  signatureY: 0.91,
+  signatureY: 0.94,
   logoData: "",
   assets: [],
-  layerOrder: ["image", "title", "summary", "logo", "signature"]
+  layerOrder: ["image", "source", "logo", "title", "summary", "signature"]
 };
 const ZONA_DA_MATA_TERMS = [
   "zona da mata", "murici", "união dos palmares", "uniao dos palmares", "branquinha",
@@ -84,6 +87,7 @@ const elements = {
   cardCanvas: document.querySelector("#card-preview"),
   cardBackground: document.querySelector("#card-background"),
   cardTextColor: document.querySelector("#card-text-color"),
+  cardAccentColor: document.querySelector("#card-accent-color"),
   cardAlignment: document.querySelector("#card-alignment"),
   cardTitleSize: document.querySelector("#card-title-size"),
   cardImageHeight: document.querySelector("#card-image-height"),
@@ -212,6 +216,7 @@ function renderCardNewsResults() {
 }
 
 function openCardStudioForArticle(article) {
+  const selectedArticle = article || state.readerArticle;
   if (elements.reader && !elements.reader.hidden) {
     elements.reader.hidden = true;
     elements.readerMedia.replaceChildren();
@@ -223,16 +228,16 @@ function openCardStudioForArticle(article) {
       history.replaceState(null, "", `${location.pathname}${location.search}`);
     }
   }
-  if (article) {
-    state.cardArticle = article;
+  if (selectedArticle) {
+    state.cardArticle = selectedArticle;
     state.cardImageOverride = "";
     elements.cardImageUpload.value = "";
-    elements.cardSearch.value = article.title;
+    elements.cardSearch.value = selectedArticle.title;
     renderCardNewsResults();
     renderCardPreview();
   }
   elements.cardStudio.scrollIntoView({ behavior: "smooth", block: "start" });
-  setCardStatus(article
+  setCardStatus(selectedArticle
     ? "Notícia selecionada. O card usa seu layout salvo; ajuste se quiser e baixe o PNG."
     : "Selecione uma notícia para configurar e gerar o card.");
 }
@@ -266,7 +271,7 @@ function drawCardImageCover(context, image, x, y, width, height) {
   const drawHeight = image.naturalHeight * scale;
   context.save();
   context.beginPath();
-  context.roundRect(x, y, width, height, 24);
+  context.roundRect(x, y, width, height, width >= 1000 && height >= 1300 ? 0 : 24);
   context.clip();
   context.drawImage(image, x + (width - drawWidth) / 2, y + (height - drawHeight) / 2, drawWidth, drawHeight);
   context.restore();
@@ -280,13 +285,21 @@ function cardTextAnchor(context, width, normalizedX) {
 }
 
 function cardLayerOrder() {
-  const available = ["image", "title", "summary", "logo", ...(state.cardTemplate.assets || []).map((asset) => `asset:${asset.id}`), "signature"];
+  const available = ["image", "source", "title", "summary", "logo", ...(state.cardTemplate.assets || []).map((asset) => `asset:${asset.id}`), "signature"];
   const savedOrder = Array.isArray(state.cardTemplate.layerOrder) ? state.cardTemplate.layerOrder : [];
-  return [...savedOrder.filter((layer, index) => available.includes(layer) && savedOrder.indexOf(layer) === index), ...available.filter((layer) => !savedOrder.includes(layer))];
+  const order = savedOrder.filter((layer, index) => available.includes(layer) && savedOrder.indexOf(layer) === index);
+  for (let index = 0; index < available.length; index += 1) {
+    const layer = available[index];
+    if (order.includes(layer)) continue;
+    const nextLayer = available.slice(index + 1).find((item) => order.includes(item));
+    order.splice(nextLayer ? order.indexOf(nextLayer) : order.length, 0, layer);
+  }
+  return order;
 }
 
 function cardLayerLabel(layer) {
   if (layer === "image") return "Foto da notícia";
+  if (layer === "source") return "Selo do portal";
   if (layer === "title") return "Título";
   if (layer === "summary") return "Resumo";
   if (layer === "logo") return "Logo da marca";
@@ -362,11 +375,11 @@ async function renderCardPreview() {
     if (layer === "image") {
       const imageX = width * template.imageX;
       const imageY = height * template.imageY;
-      const imageWidth = width * 0.88;
+      const imageWidth = width * (template.imageHeight >= 95 ? 1 : 0.88);
       const imageHeight = height * template.imageHeight / 100;
       context.fillStyle = "#253a5b";
       context.beginPath();
-      context.roundRect(imageX, imageY, imageWidth, imageHeight, 24);
+      context.roundRect(imageX, imageY, imageWidth, imageHeight, template.imageHeight >= 95 ? 0 : 24);
       context.fill();
       if (photo) {
         drawCardImageCover(context, photo, imageX, imageY, imageWidth, imageHeight);
@@ -376,23 +389,85 @@ async function renderCardPreview() {
         context.textAlign = "center";
         context.fillText(imageSource ? "Não foi possível carregar a foto" : "A foto da notícia aparecerá aqui", width / 2, imageY + imageHeight / 2);
       }
+      const gradient = context.createLinearGradient(0, height * 0.12, 0, height);
+      gradient.addColorStop(0, "rgba(5, 7, 13, 0.16)");
+      gradient.addColorStop(0.34, "rgba(5, 7, 13, 0.12)");
+      gradient.addColorStop(0.58, "rgba(5, 7, 13, 0.57)");
+      gradient.addColorStop(0.78, "rgba(5, 7, 13, 0.91)");
+      gradient.addColorStop(1, "rgba(5, 7, 13, 0.97)");
+      context.fillStyle = gradient;
+      context.fillRect(imageX, imageY, imageWidth, imageHeight);
+    } else if (layer === "source") {
+      const label = article?.source || "PORTAL DE NOTÍCIAS";
+      const fontSize = Math.round(width * 0.023);
+      context.save();
+      context.font = `700 ${fontSize}px "DM Sans", Arial, sans-serif`;
+      const pillWidth = Math.min(width * 0.62, context.measureText(label).width + width * 0.075);
+      const pillHeight = width * 0.066;
+      const pillX = width * template.sourceX - pillWidth / 2;
+      const pillY = height * template.sourceY;
+      context.fillStyle = "#ffffff";
+      context.beginPath();
+      context.roundRect(pillX, pillY, pillWidth, pillHeight, pillHeight / 2);
+      context.fill();
+      context.fillStyle = "#181b22";
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.fillText(label, width * template.sourceX, pillY + pillHeight / 2, pillWidth - width * 0.04);
+      context.restore();
     } else if (layer === "title") {
-      context.fillStyle = textColor;
+      context.save();
       context.textAlign = titleAnchor.textAlign;
-      context.font = `800 ${titleFont}px Arial, sans-serif`;
-      const titleLines = wrapCanvasText(context, title, textWidth, template.format === "story" ? 4 : 3);
+      context.font = `800 ${titleFont}px "Manrope", "DM Sans", Arial, sans-serif`;
+      const titleLines = wrapCanvasText(context, title, textWidth, 4);
       const titleLineHeight = titleFont * 1.18;
-      titleLines.forEach((line, index) => context.fillText(line, titleAnchor.x, height * template.titleY + titleFont + index * titleLineHeight, textWidth));
+      context.shadowColor = "rgba(0, 0, 0, 0.38)";
+      context.shadowBlur = 14;
+      context.shadowOffsetY = 3;
+      let highlightedLength = Math.ceil(title.length * 0.43);
+      const highlightEnd = title.indexOf(" ", highlightedLength);
+      if (highlightEnd > 0) highlightedLength = highlightEnd;
+      const highlightedTitle = title.slice(0, highlightedLength).trimEnd();
+      let remainingHighlight = highlightedTitle.length;
+      titleLines.forEach((line, index) => {
+        const baseline = height * template.titleY + titleFont + index * titleLineHeight;
+        const highlighted = line.slice(0, Math.max(0, Math.min(line.length, remainingHighlight)));
+        const rest = line.slice(highlighted.length);
+        remainingHighlight -= highlighted.length;
+        context.textAlign = "left";
+        if (!highlighted) {
+          const lineWidth = context.measureText(line).width;
+          let lineX = titleAnchor.x;
+          if (titleAnchor.textAlign === "center") lineX -= lineWidth / 2;
+          else if (titleAnchor.textAlign === "right") lineX -= lineWidth;
+          context.fillStyle = textColor;
+          context.fillText(line, lineX, baseline, textWidth);
+          return;
+        }
+        const highlightWidth = context.measureText(highlighted).width;
+        const restWidth = context.measureText(rest).width;
+        const totalWidth = highlightWidth + restWidth;
+        let startX = titleAnchor.x;
+        if (titleAnchor.textAlign === "center") startX -= totalWidth / 2;
+        else if (titleAnchor.textAlign === "right") startX -= totalWidth;
+        context.fillStyle = template.accentColor;
+        context.fillText(highlighted, startX, baseline, textWidth);
+        context.fillStyle = textColor;
+        context.fillText(rest, startX + highlightWidth, baseline, Math.max(0, textWidth - highlightWidth));
+      });
+      context.restore();
     } else if (layer === "summary") {
-      context.fillStyle = textColor;
-      context.globalAlpha = 0.88;
+      context.save();
+      context.fillStyle = "#f0f1f5";
+      context.shadowColor = "rgba(0, 0, 0, 0.32)";
+      context.shadowBlur = 10;
       context.textAlign = summaryAnchor.textAlign;
-      context.font = `400 ${summaryFont}px Arial, sans-serif`;
+      context.font = `400 ${summaryFont}px "DM Sans", Arial, sans-serif`;
       const summaryLines = wrapCanvasText(context, description, textWidth, 5);
       const summaryLineHeight = summaryFont * 1.4;
       const summaryTop = height * template.summaryY;
       summaryLines.forEach((line, index) => context.fillText(line, summaryAnchor.x, summaryTop + summaryFont + index * summaryLineHeight, textWidth));
-      context.globalAlpha = 1;
+      context.restore();
     } else if (layer === "logo") {
       const logoX = width * template.logoX;
       const logoY = height * template.logoY;
@@ -437,6 +512,7 @@ async function renderCardPreview() {
 async function updateCardTemplateFromControls() {
   state.cardTemplate.background = elements.cardBackground.value;
   state.cardTemplate.textColor = elements.cardTextColor.value;
+  state.cardTemplate.accentColor = elements.cardAccentColor.value;
   state.cardTemplate.alignment = elements.cardAlignment.value;
   state.cardTemplate.titleSize = Number(elements.cardTitleSize.value);
   state.cardTemplate.imageHeight = Number(elements.cardImageHeight.value);
@@ -450,6 +526,7 @@ function applyCardTemplateToControls() {
   document.querySelector(`input[name="card-format"][value="${template.format}"]`).checked = true;
   elements.cardBackground.value = template.background;
   elements.cardTextColor.value = template.textColor;
+  elements.cardAccentColor.value = template.accentColor || DEFAULT_CARD_TEMPLATE.accentColor;
   elements.cardAlignment.value = template.alignment;
   elements.cardTitleSize.value = template.titleSize;
   elements.cardImageHeight.value = template.imageHeight;
@@ -524,8 +601,9 @@ function cardCanvasLayerAt(x, y) {
   const template = state.cardTemplate;
   const contains = (left, top, boxWidth, boxHeight) => x >= left && x <= left + boxWidth && y >= top && y <= top + boxHeight;
   for (const layer of cardLayerOrder().reverse()) {
-    if (layer === "image" && contains(width * template.imageX, height * template.imageY, width * 0.88, height * template.imageHeight / 100)) return layer;
-    if (layer === "title" && contains(width * (template.titleX - 0.44), height * template.titleY, width * 0.88, height * 0.17)) return layer;
+    if (layer === "image" && contains(width * template.imageX, height * template.imageY, width * (template.imageHeight >= 95 ? 1 : 0.88), height * template.imageHeight / 100)) return layer;
+    if (layer === "source" && contains(width * (template.sourceX - 0.32), height * template.sourceY, width * 0.64, height * 0.08)) return layer;
+    if (layer === "title" && contains(width * (template.titleX - 0.44), height * template.titleY, width * 0.88, height * 0.25)) return layer;
     if (layer === "summary" && contains(width * (template.summaryX - 0.44), height * template.summaryY, width * 0.88, height * 0.18)) return layer;
     if (layer === "logo" && contains(width * template.logoX - 20, height * template.logoY - 20, width * 0.25, height * 0.1)) return layer;
     if (layer === "signature" && contains(width * (template.signatureX - 0.44), height * template.signatureY - 20, width * 0.88, 60)) return layer;
@@ -603,7 +681,7 @@ function setupCardStudio() {
     applyCardTemplateToControls();
     setCardStatus("Formato alterado. Salve o layout para usá-lo nos próximos cards.");
   }));
-  [elements.cardBackground, elements.cardTextColor, elements.cardAlignment, elements.cardTitleSize, elements.cardImageHeight, elements.cardProfile]
+  [elements.cardBackground, elements.cardTextColor, elements.cardAccentColor, elements.cardAlignment, elements.cardTitleSize, elements.cardImageHeight, elements.cardProfile]
     .forEach((control) => control.addEventListener("input", updateCardTemplateFromControls));
   elements.cardLogoUpload.addEventListener("change", async () => {
     const file = elements.cardLogoUpload.files[0];
@@ -734,7 +812,7 @@ function setupCardStudio() {
       if (!asset || !startingAsset) return;
       asset.x = Math.min(0.98 - asset.width, Math.max(0.02, startingAsset.x + dx));
       asset.y = Math.min(0.98 - asset.width * asset.aspect * elements.cardCanvas.width / elements.cardCanvas.height, Math.max(0.02, startingAsset.y + dy));
-    } else if (layer === "image" || layer === "logo") {
+    } else if (layer === "image" || layer === "logo" || layer === "source") {
       state.cardTemplate[`${layer}X`] = Math.min(0.9, Math.max(0.02, template[`${layer}X`] + dx));
       state.cardTemplate[`${layer}Y`] = Math.min(0.94, Math.max(0.02, template[`${layer}Y`] + dy));
     } else {
@@ -803,6 +881,7 @@ async function refreshNews() {
     elements.refreshLabel.textContent = "Atualizar";
     elements.feed.setAttribute("aria-busy", "false");
     renderNews();
+    openArticleFromNotification();
   }
 }
 
@@ -871,6 +950,21 @@ function openArticle(article, trigger) {
   document.body.classList.add("reader-open");
   elements.readerClose.focus();
   if (location.hash !== "#materia") history.pushState({ giroReader: true }, "", "#materia");
+}
+
+function openArticleFromNotification() {
+  const requestedLink = safeUrl(new URLSearchParams(location.search).get("article"));
+  if (!requestedLink || !state.hasLoadedData) return;
+  const article = state.articles.find((item) => item.link === requestedLink);
+  const url = new URL(location.href);
+  url.searchParams.delete("article");
+  history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  if (article) {
+    openArticle(article, null);
+    return;
+  }
+  elements.error.textContent = "A notícia desta notificação não está mais disponível no feed publicado.";
+  elements.error.hidden = false;
 }
 
 function closeArticle() {
@@ -984,7 +1078,7 @@ async function notifyNewArticles(articles) {
     icon: "./icon.svg",
     badge: "./icon.svg",
     tag: `giro360-${storyId(articles[0])}`,
-    data: { url: articles[0].link }
+    data: { articleUrl: articles[0].link }
   });
 }
 
@@ -1047,7 +1141,14 @@ elements.feed.addEventListener("click", (event) => {
   const article = state.visibleArticles[index];
   openArticle(article, trigger);
 });
-elements.readerCreateCard.addEventListener("click", () => openCardStudioForArticle(state.readerArticle));
+elements.readerCreateCard.addEventListener("click", (event) => {
+  event.preventDefault();
+  if (!state.readerArticle) {
+    setCardStatus("Não foi possível identificar esta notícia. Feche e abra a matéria novamente.", true);
+    return;
+  }
+  openCardStudioForArticle(state.readerArticle);
+});
 elements.readerClose.addEventListener("click", handleReaderClose);
 window.addEventListener("popstate", () => {
   if (!elements.reader.hidden) closeArticle();

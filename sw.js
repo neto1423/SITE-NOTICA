@@ -1,4 +1,4 @@
-const CACHE_NAME = "giro360-v1";
+const CACHE_NAME = "giro360-v2";
 const APP_SHELL = ["./", "./index.html", "./styles.css", "./app.js", "./manifest.webmanifest", "./icon.svg", "./icon-180.png"];
 
 self.addEventListener("install", (event) => {
@@ -51,8 +51,20 @@ self.addEventListener("fetch", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const targetUrl = event.notification.data?.url;
   event.waitUntil(
-    clients.openWindow(targetUrl || "./")
+    (async () => {
+      const notificationData = event.notification.data || {};
+      const articleUrl = notificationData.articleUrl || notificationData.url;
+      const targetUrl = new URL("./", self.registration.scope);
+      if (articleUrl) targetUrl.searchParams.set("article", articleUrl);
+
+      const windows = await clients.matchAll({ type: "window", includeUncontrolled: true });
+      const appWindow = windows.find((client) => client.url.startsWith(self.registration.scope));
+      if (appWindow) {
+        await appWindow.navigate(targetUrl.href);
+        return appWindow.focus();
+      }
+      return clients.openWindow(targetUrl.href);
+    })()
   );
 });

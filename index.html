@@ -100,8 +100,9 @@
               </fieldset>
 
               <div class="card-control-grid">
-                <label>Fundo <input id="card-background" type="color" value="#102447"></label>
+                <label>Fundo <input id="card-background" type="color" value="#11131a"></label>
                 <label>Cor do texto <input id="card-text-color" type="color" value="#ffffff"></label>
+                <label>Cor de destaque <input id="card-accent-color" type="color" value="#ff5b32"></label>
                 <label>Alinhamento
                   <select id="card-alignment">
                     <option value="left">Esquerda</option>
@@ -110,7 +111,7 @@
                   </select>
                 </label>
                 <label>Tamanho do título <input id="card-title-size" type="range" min="40" max="100" value="68"></label>
-                <label>Altura da foto <input id="card-image-height" type="range" min="24" max="52" value="40"></label>
+                <label>Altura da foto <input id="card-image-height" type="range" min="24" max="100" value="100"></label>
                 <label>Perfil/assinatura <input id="card-profile" type="text" maxlength="40" placeholder="@seuperfil"></label>
               </div>
 
@@ -140,7 +141,7 @@
               <p class="card-studio-status" id="card-studio-status" role="status" aria-live="polite">Selecione uma notícia para começar.</p>
             </div>
             <div class="card-preview-column">
-              <p class="card-preview-hint">Arraste título, foto, resumo, logo ou assinatura para posicionar.</p>
+              <p class="card-preview-hint">Modelo editorial: foto em tela cheia, degradê escuro, título destacado e resumo elegante. Arraste as camadas para ajustar.</p>
               <canvas id="card-preview" class="card-preview" width="1080" height="1350" aria-label="Prévia do card para Instagram"></canvas>
               <p class="card-export-note">O layout, a logo e os elementos são salvos neste navegador quando você toca em “Salvar meu layout”. A foto personalizada é usada apenas no card atual. Publique o PNG no Instagram manualmente.</p>
             </div>
