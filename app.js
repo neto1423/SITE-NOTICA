@@ -1,4 +1,5 @@
 const REFRESH_INTERVAL = 60_000;
+const APP_BASE_URL = new URL("./", document.currentScript.src);
 const ZONA_DA_MATA_TERMS = [
   "zona da mata", "murici", "união dos palmares", "uniao dos palmares", "branquinha",
   "santana do mundaú", "santana do mundau", "são josé da laje", "sao jose da laje",
@@ -131,13 +132,15 @@ async function refreshNews() {
   if (!state.articles.length) elements.loading.hidden = false;
   elements.error.hidden = true;
   try {
-    const response = await fetch(`./data/latest-news.json?check=${Date.now()}`, {
+    const feedUrl = new URL("data/latest-news.json", APP_BASE_URL);
+    feedUrl.searchParams.set("check", Date.now());
+    const response = await fetch(feedUrl, {
       cache: "no-store",
       signal: AbortSignal.timeout(15_000)
     });
     if (!response.ok) {
       const reason = response.status === 404
-        ? "O feed ainda não foi publicado. Execute a GitHub Action “Atualizar notícias e publicar” no repositório."
+        ? "O arquivo de notícias não foi encontrado no site publicado. No GitHub, confirme em Settings → Pages que a origem é GitHub Actions e verifique se “Atualizar notícias e publicar” terminou com sucesso na branch padrão."
         : `Não foi possível carregar o feed publicado (${response.status}).`;
       throw new Error(reason);
     }
