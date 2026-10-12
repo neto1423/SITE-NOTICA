@@ -9,7 +9,7 @@ await mkdir(dirname(outputPath), { recursive: true });
 
 const directFeeds = [
   { key: "alagoas", source: "TNH1", url: "https://www.tnh1.com.br/feed/" },
-  { key: "alagoas", source: "Gazetaweb", url: "https://www.gazetaweb.com/feed/" },
+  { key: "alagoas", source: "Gazetaweb (Alagoas)", url: "https://www.gazetaweb.com/feed/" },
   { key: "alagoas", source: "7Segundos", url: "https://www.7segundos.com.br/rss" },
   { key: "alagoas", source: "G1 Alagoas", url: "https://g1.globo.com/rss/g1/al/alagoas/" },
   { key: "brasil", source: "G1 Brasil", url: "https://g1.globo.com/rss/g1/" },
@@ -18,7 +18,12 @@ const directFeeds = [
   { key: "brasil", source: "BBC News Brasil", url: "https://feeds.bbci.co.uk/portuguese/rss.xml" },
   { key: "brasil", source: "Agência Brasil", url: "https://agenciabrasil.ebc.com.br/rss/ultimasnoticias/feed.xml" },
   { key: "brasil", source: "Poder360", url: "https://www.poder360.com.br/feed/" },
-  { key: "brasil", source: "UOL", url: "https://rss.uol.com.br/feed/noticias.xml" }
+  { key: "brasil", source: "UOL", url: "https://rss.uol.com.br/feed/noticias.xml" },
+  { key: "brasil", source: "O Globo", url: "https://oglobo.globo.com/rss.xml" },
+  { key: "brasil", source: "Estadão", url: "https://www.estadao.com.br/arc/outboundfeeds/rss/?outputType=xml" },
+  { key: "brasil", source: "Metrópoles", url: "https://www.metropoles.com/feed" },
+  { key: "brasil", source: "InfoMoney", url: "https://www.infomoney.com.br/feed/" },
+  { key: "brasil", source: "Terra", url: "https://www.terra.com.br/rss.xml" }
 ];
 const portalsAlagoas = [
   "tnh1.com.br",
@@ -26,7 +31,14 @@ const portalsAlagoas = [
   "7segundos.com.br",
   "cadaminuto.com.br",
   "alagoas24horas.com.br",
-  "g1.globo.com/al"
+  "g1.globo.com/al",
+  "tribunahoje.com",
+  "jaenoticia.com.br",
+  "aquiacontece.com.br",
+  "alagoasweb.com",
+  "correiodosmunicipios-al.com.br",
+  "minutoarapiraca.com.br",
+  "alagoasnt.com.br"
 ];
 const portalsBrasil = [
   "g1.globo.com",
@@ -35,19 +47,35 @@ const portalsBrasil = [
   "folha.uol.com.br",
   "bbc.com/portuguese",
   "agenciabrasil.ebc.com.br",
-  "poder360.com.br"
+  "poder360.com.br",
+  "oglobo.globo.com",
+  "estadao.com.br",
+  "metropoles.com",
+  "r7.com",
+  "terra.com.br",
+  "infomoney.com.br",
+  "valor.globo.com",
+  "jovempan.com.br",
+  "sbtnews.com.br",
+  "nexojornal.com.br",
+  "brasildefato.com.br",
+  "agenciapublica.org.br"
 ];
+function portalSearchFeeds(key, category, portals, region) {
+  const groupSize = 4;
+  return Array.from({ length: Math.ceil(portals.length / groupSize) }, (_, index) => {
+    const group = portals.slice(index * groupSize, (index + 1) * groupSize);
+    return {
+      key,
+      category,
+      query: `(${group.map((portal) => `site:${portal}`).join(" OR ")}) ${region}`
+    };
+  });
+}
+
 const searchFeeds = [
-  {
-    key: "alagoas",
-    category: "Alagoas",
-    query: `(${portalsAlagoas.map((portal) => `site:${portal}`).join(" OR ")}) Alagoas`
-  },
-  {
-    key: "brasil",
-    category: "Brasil",
-    query: `(${portalsBrasil.map((portal) => `site:${portal}`).join(" OR ")}) Brasil`
-  },
+  ...portalSearchFeeds("alagoas", "Alagoas", portalsAlagoas, "Alagoas"),
+  ...portalSearchFeeds("brasil", "Brasil", portalsBrasil, "Brasil"),
   {
     key: "mata",
     category: "Zona da Mata",
@@ -191,7 +219,9 @@ function normalizedTitle(value) {
 const ARTICLE_PAGE_HOSTS = [
   "tnh1.com.br", "gazetaweb.com", "7segundos.com.br", "g1.globo.com", "cnnbrasil.com.br",
   "folha.uol.com.br", "bbc.com", "bbci.co.uk", "agenciabrasil.ebc.com.br",
-  "poder360.com.br", "uol.com.br"
+  "poder360.com.br", "uol.com.br", "oglobo.globo.com", "estadao.com.br",
+  "metropoles.com", "infomoney.com.br", "terra.com.br", "tribunahoje.com",
+  "jaenoticia.com.br", "aquiacontece.com.br", "alagoasweb.com"
 ];
 
 function readMetaContent(html, propertyName) {
