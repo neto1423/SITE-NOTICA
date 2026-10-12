@@ -1,0 +1,54 @@
+name: Atualizar notícias e publicar
+
+on:
+  push:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.event_name != 'push' || github.ref_name == github.event.repository.default_branch
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o projeto
+        uses: actions/checkout@v4
+
+      - name: Preparar GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Atualizar snapshot de notícias
+        run: node scripts/refresh-news.mjs
+
+      - name: Validar snapshot de notícias
+        run: |
+          node --input-type=module -e 'import { readFileSync } from "node:fs"; const snapshot = JSON.parse(readFileSync("data/latest-news.json", "utf8")); if (!Array.isArray(snapshot.articles) || snapshot.articles.length === 0) throw new Error("O snapshot precisa conter pelo menos uma notícia."); console.log(`Snapshot válido: ${snapshot.articles.length} notícias.`);'
+
+      - name: Preparar site estático
+        run: |
+          mkdir -p _site/data
+          cp index.html app.js styles.css manifest.webmanifest sw.js icon.svg icon-180.png _site/
+          cp data/latest-news.json _site/data/latest-news.json
+          test -s _site/data/latest-news.json
+          touch _site/.nojekyll
+
+      - name: Carregar site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Publicar no GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
