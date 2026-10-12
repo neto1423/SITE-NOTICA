@@ -1,148 +1,152 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Central de Notícias — GIRO 360</title>
-    <meta
-      name="description"
-      content="Notícias de Alagoas, do Brasil e da Zona da Mata, reunidas em um só lugar."
-    />
-    <meta name="theme-color" content="#071b2d" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-title" content="GIRO 360" />
-    <link rel="manifest" href="manifest.webmanifest" />
-    <link rel="icon" href="icon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="icon.svg" />
-    <link rel="stylesheet" href="styles.css?v=20261012-26" />
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#f7f8fc">
+    <meta name="description" content="Notícias de Alagoas, da Zona da Mata e do Brasil em um só lugar.">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Giro 360">
+    <link rel="manifest" href="./manifest.webmanifest">
+    <link rel="icon" href="./icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="./icon-180.png">
+    <link rel="stylesheet" href="./styles.css">
+    <title>Giro 360 — notícias perto de você</title>
   </head>
   <body>
     <div class="app-shell">
       <header class="topbar">
-        <div class="topbar-inner">
-          <span></span>
-
-          <h1>GIRO 360</h1>
-
-          <button class="icon-button" id="toggleNotifications" aria-label="Notificações">
-            <span class="bell">🔔</span>
-            <span class="badge" id="notificationsBadge">0</span>
+        <a class="brand" href="./" aria-label="Giro 360, início">
+          <span class="brand-mark" aria-hidden="true">g</span>
+          <span>giro<span class="brand-accent">360</span></span>
+        </a>
+        <div class="top-actions">
+          <button class="icon-button" id="search-toggle" type="button" aria-label="Abrir busca" aria-expanded="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.6"></circle><path d="m16 16 4.5 4.5"></path></svg>
           </button>
+          <button class="profile-button" id="install-button" type="button" hidden>Instalar app</button>
         </div>
       </header>
 
-      <main class="content">
-        <section class="hero">
-          <p class="eyebrow">Central de Notícias</p>
-          <h2>Tudo o que foi encontrado, em um só lugar.</h2>
+      <main>
+        <section class="welcome">
+          <div>
+            <p class="eyebrow"><span class="live-dot"></span> SUA CENTRAL DE NOTÍCIAS</p>
+            <h1>O que acontece<br><span>perto de você.</span></h1>
+            <p class="welcome-copy">Alagoas, Zona da Mata e Brasil. Tudo em um só lugar.</p>
+          </div>
+          <div class="welcome-art" aria-hidden="true">
+            <span class="art-sun"></span><span class="art-hill hill-one"></span><span class="art-hill hill-two"></span>
+            <span class="art-star star-one">✳</span><span class="art-star star-two">✳</span>
+          </div>
         </section>
 
-        <nav class="main-tabs" aria-label="Seções do GIRO 360">
-          <button class="main-tab active" type="button" data-view="news">Notícias</button>
-          <button class="main-tab" type="button" data-view="zone">
-            Zona da Mata <span class="zone-count" id="zoneNotificationsBadge">0</span>
-          </button>
-          <button class="main-tab" type="button" data-view="sources">Portais</button>
-        </nav>
+        <section class="search-panel" id="search-panel" hidden>
+          <label for="search-input">Buscar notícias</label>
+          <input id="search-input" type="search" placeholder="Ex.: Maceió, educação, esporte" autocomplete="off">
+        </section>
 
-        <section id="newsView" class="view-section">
-          <p class="sync-status" id="syncStatus" role="status">Conectando aos portais…</p>
-          <label class="news-search">
-            <span aria-hidden="true">⌕</span>
-            <input id="newsSearch" type="search" placeholder="Buscar notícia, portal ou município" autocomplete="off" />
-          </label>
-          <nav class="status-tabs" aria-label="Filtros de notícias">
-          <button class="tab active" data-filter="all">Todas</button>
-          <button class="tab" data-filter="new">Novas</button>
-          <button class="tab" data-filter="read">Lidas</button>
-          <button class="tab" data-filter="reviewed">Revisadas</button>
-          <button class="tab" data-filter="shared">Compartilhadas</button>
-          <button class="tab" data-filter="saved">Salvas</button>
+        <section class="stories-section" aria-labelledby="stories-heading">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">EM TEMPO REAL</p>
+              <h2 id="stories-heading">Agora no Giro</h2>
+            </div>
+            <button class="refresh-button" id="refresh-button" type="button" aria-label="Atualizar notícias">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4.7 9a7.5 7.5 0 0 1 12.6-2L20 12M4 17v-5h5m10.3 3a7.5 7.5 0 0 1-12.6 2L4 12"></path></svg>
+              <span id="refresh-label">Atualizar</span>
+            </button>
+          </div>
+          <nav class="category-tabs" aria-label="Categorias de notícias">
+            <button class="category-tab is-active" data-category="all" type="button">Para você</button>
+            <button class="category-tab" data-category="mata" type="button">Zona da Mata <span class="tab-sparkle">✳</span></button>
+            <button class="category-tab" data-category="alagoas" type="button">Alagoas</button>
+            <button class="category-tab" data-category="brasil" type="button">Brasil</button>
           </nav>
-
-          <section id="newsList" class="news-list" aria-live="polite"></section>
+          <p class="last-updated" id="last-updated" aria-live="polite">Conectando aos portais de notícias…</p>
+          <div class="error-banner" id="error-banner" role="status" hidden></div>
+          <div class="feed-grid" id="feed-grid" aria-live="polite" aria-busy="true"></div>
+          <p class="empty-state" id="empty-state" hidden>Nenhuma notícia encontrada nesta categoria por enquanto. Tente atualizar em instantes.</p>
+          <div class="loading-state" id="loading-state">
+            <span class="loading-orb"></span>
+            <p>Buscando as últimas notícias…</p>
+          </div>
+          <p class="attribution">Notícias publicadas por seus portais de origem. Toque em uma matéria para abrir a leitura dentro do Giro.</p>
         </section>
 
-        <section id="zoneView" class="view-section hidden">
-          <header class="zone-heading">
-            <p class="eyebrow">GIRO 360 · ALAGOAS</p>
-            <h2>Zona da Mata</h2>
-            <p>Notícias da região em um feed para rolar com o dedo.</p>
-          </header>
-          <section id="zoneFeed" class="zone-feed" aria-live="polite"></section>
+        <section class="alert-card">
+          <div class="alert-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4"></path></svg>
+          </div>
+          <div class="alert-copy">
+            <h2>Notícias novas, avisos na hora</h2>
+            <p id="alert-status">Ative as notificações para receber alertas enquanto acompanha o Giro.</p>
+          </div>
+          <button class="toggle-button" id="notification-toggle" type="button" aria-pressed="false">
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span id="notification-label">Ativar</span>
+          </button>
+          <p class="alert-note">No iPhone: adicione o Giro à Tela de Início e permita notificações. O app confere o feed a cada minuto enquanto aberto; o GitHub atualiza os portais em ciclos de pelo menos 5 minutos.</p>
         </section>
 
-        <section id="videoView" class="view-section hidden">
-          <header class="zone-heading">
-            <p class="eyebrow">GIRO 360 · VÍDEOS</p>
-            <h2>Vídeos</h2>
-            <p>Uma playlist em um único player, adaptado para vídeos verticais e horizontais. Deslize pela lateral ou use as setas para trocar de vídeo.</p>
-          </header>
-          <section id="videoFeed" class="zone-feed video-feed" aria-live="polite"></section>
-        </section>
-
-        <section id="sourceView" class="view-section hidden">
-          <header class="zone-heading">
-            <p class="eyebrow">GIRO 360 · PERFIS</p>
-            <h2>Portais</h2>
-            <p>Toque em um perfil para ver as notícias daquele portal.</p>
-          </header>
-          <section id="portalProfiles" class="portal-profiles" aria-label="Portais cadastrados"></section>
-          <section id="portalStories" class="news-list" aria-live="polite"></section>
-          <form id="sourceForm" class="source-form">
-            <fieldset class="source-type-picker">
-              <legend>Tipo de fonte para adicionar</legend>
-              <button class="source-type active" type="button" data-source-type="instagram">Instagram</button>
-              <button class="source-type" type="button" data-source-type="tiktok">TikTok</button>
-              <button class="source-type" type="button" data-source-type="site">Site</button>
-              <button class="source-type" type="button" data-source-type="rss">Feed RSS</button>
-            </fieldset>
-            <label class="source-batch-label" for="sourceInput">Adicione vários itens separados por vírgula, ponto e vírgula ou quebra de linha</label>
-            <textarea id="sourceInput" rows="3" placeholder="@perfil1, @perfil2" aria-label="Perfis ou endereços para adicionar em lote" aria-describedby="sourceHelp sourceFormStatus"></textarea>
-            <p id="sourceHelp" class="helper-text">Feeds RSS/Atom cadastrados são consultados pelo servidor a cada minuto; sites sem feed compatível não são monitorados. Perfis do Instagram e TikTok adicionados aqui são atalhos, não geram coleta nem alertas: isso exige integração oficial autorizada. O app mostra o conteúdo publicado no feed, não copia matérias completas protegidas. Para canais do YouTube, use https://www.youtube.com/feeds/videos.xml?channel_id=ID_DO_CANAL. Vídeos do g1 não entram na playlist porque o player deles não permite reprodução incorporada.</p>
-            <p id="sourceFormStatus" class="source-form-status" role="status" aria-live="polite"></p>
-            <button class="source-submit" type="submit">Adicionar em lote</button>
-          </form>
-          <ul id="sourcesList" class="source-list" aria-live="polite"></ul>
+        <section class="sources-section">
+          <p class="eyebrow">JORNALISMO DE VÁRIAS FONTES</p>
+          <h2>Os portais que você acompanha</h2>
+          <p>Seleção com veículos de Alagoas e do Brasil. Leia a matéria original no Giro ou abra a publicação no portal de origem.</p>
+          <div class="source-chips">
+            <span>G1 Alagoas</span><span>Gazetaweb</span><span>TNH1</span><span>7Segundos</span><span>CadaMinuto</span><span>Alagoas 24 Horas</span><span>CNN Brasil</span><span>UOL</span><span>Folha</span><span>BBC News Brasil</span><span>Agência Brasil</span><span>Poder360</span>
+          </div>
         </section>
       </main>
+
+      <footer class="bottom-nav" aria-label="Navegação principal">
+        <button class="bottom-link is-selected" data-category="all" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5M5.5 9v11h13V9M9.5 20v-7h5v7"></path></svg><span>Início</span>
+        </button>
+        <button class="bottom-link" data-category="mata" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s7-4.5 7-11a7 7 0 1 0-14 0c0 6.5 7 11 7 11Z"></path><circle cx="12" cy="10" r="2.2"></circle></svg><span>Zona da Mata</span>
+        </button>
+        <button class="bottom-link" id="bottom-alerts" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4"></path></svg><span>Alertas</span>
+        </button>
+        <a class="bottom-link whatsapp-link" id="whatsapp-link" href="https://wa.me/?text=Confira%20o%20Giro%20360%2C%20sua%20central%20de%20not%C3%ADcias%3A%20https%3A%2F%2Fgiro360.app" target="_blank" rel="noopener noreferrer" aria-label="Compartilhar o Giro no WhatsApp">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.4 11.7a8.4 8.4 0 0 1-12.4 7.4L3 20l.9-4.8A8.4 8.4 0 1 1 20.4 11.7Z"></path><path d="M8 8.1c.2-.4.4-.4.7-.4h.4c.2 0 .3.1.4.4l.7 1.7c.1.2 0 .4-.1.6l-.5.6c-.2.2-.2.3-.1.5.6 1 1.4 1.8 2.5 2.3.2.1.4.1.5-.1l.7-.8c.2-.2.4-.2.6-.1l1.7.8c.2.1.4.2.4.4 0 .2-.1 1-.6 1.4-.5.5-1.4.7-2 .6-.6-.1-1.5-.4-2.5-.9a9.4 9.4 0 0 1-3.5-3.1c-.9-1.2-1.2-2.2-1.3-2.7-.1-.6.2-1.2.5-1.5Z"></path></svg><span>WhatsApp</span>
+        </a>
+      </footer>
     </div>
-
-    <aside id="notificationPanel" class="notification-panel hidden" aria-live="polite">
-      <div class="panel-header">
-        <h3>Notificações</h3>
-        <button class="close-panel" id="closeNotifications" aria-label="Fechar notificações">×</button>
-      </div>
-      <div class="notification-settings">
-        <p id="pushStatus" role="status">Alertas do iPhone desativados.</p>
-        <button class="push-toggle" id="pushToggle" type="button" aria-pressed="false">Ativar notificações</button>
-      </div>
-      <ul id="notificationList" class="notification-list"></ul>
-    </aside>
-
-    <dialog id="storyDialog" class="story-dialog" aria-labelledby="storyDialogTitle">
-      <div class="story-dialog-header">
-        <p id="storyDialogSource"></p>
-        <button class="close-panel" id="closeStoryDialog" type="button" aria-label="Fechar notícia">×</button>
-      </div>
-      <article id="storyDialogContent" class="story-dialog-content"></article>
-    </dialog>
-
-    <nav class="bottom-nav" aria-label="Navegação inferior">
-      <button class="bottom-nav-item active" type="button" data-view="news">
-        <span aria-hidden="true">⌂</span><span>Destaques</span>
-      </button>
-      <button class="bottom-nav-item" type="button" data-view="zone">
-        <span aria-hidden="true">⌖</span><span>Região</span>
-      </button>
-      <button class="bottom-nav-item" type="button" data-view="videos">
-        <span aria-hidden="true">▶</span><span>Vídeos</span>
-      </button>
-      <button class="bottom-nav-item" type="button" data-view="sources">
-        <span aria-hidden="true">▤</span><span>Portais</span>
-      </button>
-    </nav>
-
-    <script src="app.js?v=20261012-26"></script>
+    <section class="article-reader" id="article-reader" aria-labelledby="reader-title" aria-modal="true" role="dialog" hidden>
+      <header class="reader-header">
+        <button class="reader-back" id="reader-close" type="button" aria-label="Voltar às notícias">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg>
+          <span>Voltar</span>
+        </button>
+        <a class="brand reader-brand" href="./" aria-label="Giro 360">
+          <span class="brand-mark" aria-hidden="true">g</span>
+          <span>giro<span class="brand-accent">360</span></span>
+        </a>
+        <span class="reader-header-spacer" aria-hidden="true"></span>
+      </header>
+      <article class="reader-article">
+        <div class="reader-media" id="reader-media"></div>
+        <div class="reader-copy">
+          <p class="reader-category" id="reader-category"></p>
+          <h1 id="reader-title"></h1>
+          <div class="reader-byline"><span id="reader-source"></span><time id="reader-time"></time></div>
+          <div class="reader-rule"></div>
+          <p class="reader-section-label">RESUMO DA NOTÍCIA</p>
+          <div class="reader-body" id="reader-body"></div>
+          <p class="reader-attribution">Este resumo usa as informações disponibilizadas pelo feed e pelos metadados públicos da notícia. O texto integral pertence ao portal de origem.</p>
+          <div class="reader-actions">
+            <a class="reader-share-whatsapp" id="reader-share-whatsapp" target="_blank" rel="noopener noreferrer">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.4 11.7a8.4 8.4 0 0 1-12.4 7.4L3 20l.9-4.8A8.4 8.4 0 1 1 20.4 11.7Z"></path><path d="M8 8.1c.2-.4.4-.4.7-.4h.4c.2 0 .3.1.4.4l.7 1.7c.1.2 0 .4-.1.6l-.5.6c-.2.2-.2.3-.1.5.6 1 1.4 1.8 2.5 2.3.2.1.4.1.5-.1l.7-.8c.2-.2.4-.2.6-.1l1.7.8c.2.1.4.2.4.4 0 .2-.1 1-.6 1.4-.5.5-1.4.7-2 .6-.6-.1-1.5-.4-2.5-.9a9.4 9.4 0 0 1-3.5-3.1c-.9-1.2-1.2-2.2-1.3-2.7-.1-.6.2-1.2.5-1.5Z"></path></svg>
+              Compartilhar no WhatsApp
+            </a>
+            <a class="reader-original" id="reader-original" target="_blank" rel="noopener noreferrer">Ver publicação original (opcional) ↗</a>
+          </div>
+        </div>
+      </article>
+    </section>
+    <script src="./app.js" defer></script>
   </body>
 </html>

@@ -1,18 +1,24 @@
 {
   "id": "./",
-  "name": "GIRO 360 — Notícias",
-  "short_name": "GIRO 360",
-  "description": "Notícias de Alagoas, do Brasil e da Zona da Mata.",
+  "name": "Giro 360 — Central de Notícias",
+  "short_name": "Giro 360",
+  "description": "Notícias de Alagoas, da Zona da Mata e do Brasil em um só lugar.",
   "lang": "pt-BR",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#071b2d",
-  "theme_color": "#071b2d",
+  "background_color": "#f7f8fc",
+  "theme_color": "#f7f8fc",
   "icons": [
     {
-      "src": "icon.svg",
+      "src": "./icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"

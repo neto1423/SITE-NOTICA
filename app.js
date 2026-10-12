@@ -1,1313 +1,430 @@
-const STORAGE_KEYS = {
-  sources: 'giro360-sources',
-  statuses: 'giro360-news-statuses',
-  savedStories: 'giro360-saved-stories',
-  pushEnabled: 'giro360-push-enabled',
+const REFRESH_INTERVAL = 60_000;
+const ZONA_DA_MATA_TERMS = [
+  "zona da mata", "murici", "união dos palmares", "uniao dos palmares", "branquinha",
+  "santana do mundaú", "santana do mundau", "são josé da laje", "sao jose da laje",
+  "ibateguara", "joaquim gomes", "flexeiras", "messias", "capela", "cajueiro",
+  "atalaia", "chã preta", "cha preta", "colônia leopoldina", "colonia leopoldina"
+];
+const FALLBACK_ART = '<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M7 36 18 22l7 8 6-7 10 13H7Z"></path><circle cx="32" cy="15" r="4"></circle><path d="M5 8v32h38V8H5Z"></path></svg>';
+const state = {
+  category: "all",
+  articles: [],
+  visibleArticles: [],
+  hasLoadedData: false,
+  loading: false,
+  installedPrompt: null,
+  readerReturnFocus: null
 };
 
-const OFFICIAL_SOCIAL_PROFILES = [
-  {
-    id: 'official-instagram-tnh1',
-    type: 'instagram',
-    value: '@tnh1oficial',
-    profileUrl: 'https://www.instagram.com/tnh1oficial/',
-    publisher: 'TNH1',
-    monitored: false,
-  },
-  {
-    id: 'official-instagram-gazetaweb',
-    type: 'instagram',
-    value: '@gazetaweb',
-    profileUrl: 'https://www.instagram.com/gazetaweb/',
-    publisher: 'GazetaWeb',
-    monitored: false,
-  },
-  {
-    id: 'official-tiktok-gazetaweb',
-    type: 'tiktok',
-    value: '@gazetaweb',
-    profileUrl: 'https://www.tiktok.com/@gazetaweb',
-    publisher: 'GazetaWeb',
-    monitored: false,
-  },
-  {
-    id: 'official-instagram-alagoas24horas',
-    type: 'instagram',
-    value: '@alagoas24horasoficial',
-    profileUrl: 'https://www.instagram.com/alagoas24horasoficial/',
-    publisher: 'Alagoas 24 Horas',
-    monitored: false,
-  },
-  {
-    id: 'official-instagram-cadaminuto',
-    type: 'instagram',
-    value: '@portalcadamin',
-    profileUrl: 'https://www.instagram.com/portalcadamin/',
-    publisher: 'CadaMinuto',
-    monitored: false,
-  },
-  {
-    id: 'official-tiktok-cadaminuto',
-    type: 'tiktok',
-    value: '@portalcadaminuto',
-    profileUrl: 'https://www.tiktok.com/@portalcadaminuto',
-    publisher: 'CadaMinuto',
-    monitored: false,
-  },
-  {
-    id: 'official-instagram-cnnbrasil',
-    type: 'instagram',
-    value: '@cnnbrasil',
-    profileUrl: 'https://www.instagram.com/cnnbrasil/',
-    publisher: 'CNN Brasil',
-    monitored: false,
-  },
-  {
-    id: 'official-tiktok-cnnbrasil',
-    type: 'tiktok',
-    value: '@cnnbrasil',
-    profileUrl: 'https://www.tiktok.com/@cnnbrasil',
-    publisher: 'CNN Brasil',
-    monitored: false,
-  },
-  {
-    id: 'official-instagram-folha',
-    type: 'instagram',
-    value: '@folhadespaulo',
-    profileUrl: 'https://www.instagram.com/folhadespaulo/',
-    publisher: 'Folha de S.Paulo',
-    monitored: false,
-  },
-  {
-    id: 'official-instagram-poder360',
-    type: 'instagram',
-    value: '@poder360',
-    profileUrl: 'https://www.instagram.com/poder360/',
-    publisher: 'Poder360',
-    monitored: false,
-  },
-  {
-    id: 'official-tiktok-poder360',
-    type: 'tiktok',
-    value: '@poder360',
-    profileUrl: 'https://www.tiktok.com/@poder360',
-    publisher: 'Poder360',
-    monitored: false,
-  },
-];
+const elements = {
+  feed: document.querySelector("#feed-grid"),
+  loading: document.querySelector("#loading-state"),
+  empty: document.querySelector("#empty-state"),
+  updated: document.querySelector("#last-updated"),
+  error: document.querySelector("#error-banner"),
+  refresh: document.querySelector("#refresh-button"),
+  refreshLabel: document.querySelector("#refresh-label"),
+  notificationToggle: document.querySelector("#notification-toggle"),
+  notificationLabel: document.querySelector("#notification-label"),
+  alertStatus: document.querySelector("#alert-status"),
+  searchToggle: document.querySelector("#search-toggle"),
+  searchPanel: document.querySelector("#search-panel"),
+  searchInput: document.querySelector("#search-input"),
+  installButton: document.querySelector("#install-button"),
+  reader: document.querySelector("#article-reader"),
+  readerClose: document.querySelector("#reader-close"),
+  readerMedia: document.querySelector("#reader-media"),
+  readerCategory: document.querySelector("#reader-category"),
+  readerTitle: document.querySelector("#reader-title"),
+  readerSource: document.querySelector("#reader-source"),
+  readerTime: document.querySelector("#reader-time"),
+  readerBody: document.querySelector("#reader-body"),
+  readerOriginal: document.querySelector("#reader-original"),
+  readerShare: document.querySelector("#reader-share-whatsapp")
+};
 
-const POLL_INTERVAL_MS = 60_000;
-let newsItems = [];
-let publisherVideos = [];
-let feedSources = [];
-let videoPlaylist = [];
-let activeVideoIndex = 0;
-let videoSwipeStartY = null;
-let renderedVideoSignature = '';
-let activeArticlePreviewRequest = 0;
-let staticSnapshotMode = false;
-let newsRefreshIntervalMs = POLL_INTERVAL_MS;
-const reservedInstagramPaths = new Set([
-  'about',
-  'accounts',
-  'developer',
-  'direct',
-  'explore',
-  'p',
-  'reel',
-  'reels',
-  'stories',
-  'tv',
-]);
-
-function getStoredData(key, fallback) {
-  try {
-    return JSON.parse(localStorage.getItem(key)) ?? fallback;
-  } catch {
-    return fallback;
-  }
+function normalizeText(value = "") {
+  return value.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
-function saveData(key, value) {
-  localStorage.setItem(key, JSON.stringify(value));
+function escapeHtml(value = "") {
+  return String(value).replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  })[character]);
 }
 
-function getLocalSources() {
-  return getStoredData(STORAGE_KEYS.sources, []);
-}
-
-function seedOfficialSocialProfiles() {
-  const seedVersion = '2026-10-12';
-  if (localStorage.getItem('giro360-social-profiles-seed') === seedVersion) return;
-
-  const sources = getLocalSources();
-  const existingKeys = new Set(
-    sources.map(
-      (source) => `${source.type}:${source.value.toLocaleLowerCase('pt-BR')}`,
-    ),
-  );
-  const profilesToAdd = OFFICIAL_SOCIAL_PROFILES.filter((profile) => {
-    const key = `${profile.type}:${profile.value.toLocaleLowerCase('pt-BR')}`;
-    if (existingKeys.has(key)) return false;
-    existingKeys.add(key);
-    return true;
-  });
-  if (profilesToAdd.length) {
-    saveData(STORAGE_KEYS.sources, [...sources, ...profilesToAdd]);
-  }
-  localStorage.setItem('giro360-social-profiles-seed', seedVersion);
-}
-
-function normalizeSavedSource(type, rawValue) {
-  const value = rawValue.trim();
-  if (!value) throw new Error('item vazio');
-
-  if (type === 'instagram' || type === 'tiktok') {
-    const host = type === 'instagram' ? 'instagram.com' : 'tiktok.com';
-    let username = value;
-    if (!value.startsWith('@')) {
-      const profileUrl = new URL(
-        /^[a-z][a-z\d+.-]*:/i.test(value) ? value : `https://${value}`,
-      );
-      if (
-        profileUrl.protocol !== 'https:' ||
-        (profileUrl.hostname !== host && profileUrl.hostname !== `www.${host}`)
-      ) {
-        throw new Error(`informe um @ ou link de perfil do ${type}`);
-      }
-      username =
-        type === 'instagram'
-          ? profileUrl.pathname.split('/').filter(Boolean)[0] || ''
-          : profileUrl.pathname.match(/^\/@([^/]+)/)?.[1] || '';
-    }
-
-    username = username.replace(/^@/, '');
-    const usernamePattern =
-      type === 'instagram' ? /^[A-Za-z0-9._]{1,30}$/ : /^[A-Za-z0-9._]{2,24}$/;
-    if (!usernamePattern.test(username)) {
-      throw new Error(`perfil do ${type} inválido`);
-    }
-    if (
-      type === 'instagram' &&
-      reservedInstagramPaths.has(username.toLocaleLowerCase('pt-BR'))
-    ) {
-      throw new Error('informe o link do perfil, não o de uma publicação');
-    }
-
-    return {
-      type,
-      value: `@${username}`,
-      profileUrl: `https://www.${host}/${type === 'tiktok' ? '@' : ''}${encodeURIComponent(username)}/`,
-      monitored: false,
-    };
-  }
-
-  const sourceUrl = new URL(
-    /^[a-z][a-z\d+.-]*:/i.test(value) ? value : `https://${value}`,
-  );
-  if (
-    sourceUrl.protocol !== 'https:' ||
-    sourceUrl.username ||
-    sourceUrl.password
-  ) {
-    throw new Error('use um endereço HTTPS público');
-  }
-
-  return {
-    type,
-    value: sourceUrl.href,
-    profileUrl: sourceUrl.href,
-    monitored: false,
-  };
-}
-
-function getStatuses() {
-  return getStoredData(STORAGE_KEYS.statuses, {});
-}
-
-function getStatus(story) {
-  return getStatuses()[story.id] || 'new';
-}
-
-function getSavedStories() {
-  return getStoredData(STORAGE_KEYS.savedStories, []);
-}
-
-function isStorySaved(story) {
-  return getSavedStories().includes(story.id);
-}
-
-function escapeHtml(value) {
-  return String(value ?? '').replace(/[&<>"']/g, (character) => {
-    const entities = {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#39;',
-    };
-    return entities[character];
-  });
-}
-
-function safeHttpUrl(value) {
-  if (typeof value !== 'string' || !value.trim()) return '';
+function safeUrl(value) {
   try {
     const url = new URL(value);
-    return url.protocol === 'https:' || url.protocol === 'http:'
-      ? url.href
-      : '';
+    return ["https:", "http:"].includes(url.protocol) ? url.href : "";
   } catch {
-    return '';
+    return "";
   }
 }
 
-function safeVideoEmbedUrl(value) {
-  const safeUrl = safeHttpUrl(value);
-  if (!safeUrl) return '';
-  try {
-    const url = new URL(safeUrl);
-    const hostname = url.hostname.toLowerCase();
-    if (url.protocol !== 'https:') return '';
-    const allowed = [
-      'youtube.com',
-      'www.youtube.com',
-      'm.youtube.com',
-      'youtube-nocookie.com',
-      'www.youtube-nocookie.com',
-      'player.vimeo.com',
-      'dailymotion.com',
-      'www.dailymotion.com',
-      'geo.dailymotion.com',
-    ].includes(hostname);
-    return allowed ? url.href : '';
-  } catch {
-    return '';
-  }
+function safeVideoUrl(value) {
+  const url = safeUrl(value);
+  if (!url) return "";
+  const parsedUrl = new URL(url);
+  if (parsedUrl.protocol !== "https:") return "";
+  const { hostname } = parsedUrl;
+  if (/\.(?:mp4|webm|m3u8)(?:$|[?#])/i.test(parsedUrl.href)) return url;
+  return ["www.youtube-nocookie.com", "youtube-nocookie.com", "player.vimeo.com"].includes(hostname) ? url : "";
 }
 
-function videoFeedSource(story) {
-  if (story.videoProvider === 'globo' && /^\d{5,20}$/.test(story.videoId || '')) {
-    return `globo:${story.videoId}`;
-  }
-  return safeVideoEmbedUrl(story.videoEmbedUrl) || safeHttpUrl(story.videoUrl);
+function isZonaDaMata(article) {
+  const haystack = normalizeText(`${article.title} ${article.description}`);
+  return ZONA_DA_MATA_TERMS.some((term) => haystack.includes(normalizeText(term)));
 }
 
-function isG1Video(story) {
-  if (
-    story.videoProvider === 'globo' ||
-    String(story.source || '').trim().toLocaleLowerCase('pt-BR') === 'g1'
-  ) {
-    return true;
-  }
-  return [story.videoEmbedUrl, story.videoUrl].some((value) => {
-    const safeUrl = safeHttpUrl(value);
-    if (!safeUrl) return false;
-    try {
-      return new URL(safeUrl).hostname.toLocaleLowerCase('pt-BR') === 'g1.globo.com';
-    } catch {
-      return false;
-    }
-  });
+function isAlagoasArticle(article) {
+  const haystack = normalizeText(`${article.title} ${article.description} ${article.link}`);
+  return ["alagoas", "maceio", "arapiraca", "rio largo", "palmeira dos indios"].some((term) => haystack.includes(term))
+    || /g1\.globo\.com\/al\//i.test(article.link);
 }
 
-function formatDate(value) {
+function categoryFor(article) {
+  if (article.feed === "mata" || isZonaDaMata(article)) return "Zona da Mata";
+  if (article.feed === "alagoas" || isAlagoasArticle(article)) return "Alagoas";
+  return "Brasil";
+}
+
+function formatTime(value) {
   const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? 'Data não informada'
-    : new Intl.DateTimeFormat('pt-BR', {
-        day: '2-digit',
-        month: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-      }).format(date);
+  if (Number.isNaN(date.getTime())) return "Agora";
+  return new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" }).format(date);
 }
 
-function whatsappLink(story) {
-  const url = safeHttpUrl(story.url);
-  if (!url) return '';
-  const imageUrl = safeHttpUrl(story.imageUrl);
-  const message = [
-    story.title,
-    '',
-    `🔗 Link da notícia: ${url}`,
-    imageUrl ? `🖼️ Imagem oficial: ${imageUrl}` : '',
-  ]
-    .filter(Boolean)
-    .join('\n');
-
-  return `https://wa.me/?text=${encodeURIComponent(message)}`;
+function storyId(article) {
+  return article.link;
 }
 
-function renderNewsCard(story, zoneFeed = false) {
-  const imageUrl = safeHttpUrl(story.imageUrl);
-  const videoUrl = safeHttpUrl(story.videoUrl);
-  const embedUrl = safeVideoEmbedUrl(story.videoEmbedUrl);
-  const media = embedUrl
-    ? `<iframe class="story-media story-video-embed" src="${escapeHtml(embedUrl)}" title="${escapeHtml(story.title)}" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>`
-    : videoUrl
-    ? `<video class="story-media" src="${escapeHtml(videoUrl)}" poster="${escapeHtml(imageUrl)}" controls playsinline preload="metadata">Seu navegador não reproduz este vídeo.</video>`
-    : imageUrl
-      ? `<img class="story-media" src="${escapeHtml(imageUrl)}" alt="" loading="lazy" />`
-      : '<div class="story-media media-unavailable">Esta publicação não trouxe uma imagem no feed do portal.</div>';
-  if (zoneFeed) {
-    return `
-      <article class="zone-post">
-        ${media}
-        <div class="zone-post-body">
-          <p class="story-source">${escapeHtml(story.source)} · publicado ${escapeHtml(formatDate(story.publishedAt))}</p>
-          <button class="headline-button" type="button" data-open-story="${escapeHtml(story.id)}">${escapeHtml(story.title)}</button>
-        </div>
-      </article>`;
-  }
-
-  return `
-    <article class="news-card">
-      ${imageUrl ? `<button class="news-image-button" type="button" data-open-story="${escapeHtml(story.id)}" aria-label="Abrir notícia: ${escapeHtml(story.title)}"><img class="thumb" src="${escapeHtml(imageUrl)}" alt="" loading="lazy" /></button>` : '<div class="thumb media-unavailable">Sem imagem</div>'}
-      <div class="news-card-content">
-        <button class="headline-button" type="button" data-open-story="${escapeHtml(story.id)}">${escapeHtml(story.title)}</button>
-        <div class="news-meta">
-          <span>${escapeHtml(story.source)}</span>
-          <time datetime="${escapeHtml(story.publishedAt)}">Publicado ${escapeHtml(formatDate(story.publishedAt))}</time>
-        </div>
-      </div>
-    </article>`;
+function imageUrlFor(article) {
+  const image = safeUrl(article.image);
+  if (image) return image;
+  const video = safeVideoUrl(article.video);
+  const youtubeId = video?.match(/youtube-nocookie\.com\/embed\/([\w-]+)/)?.[1];
+  return youtubeId ? `https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg` : "";
 }
 
-function renderNews() {
-  const list = document.getElementById('newsList');
-  if (!list) return;
-
-  const activeFilter =
-    document.querySelector('.tab.active')?.dataset.filter || 'all';
-  const searchTerm = normalizeText(
-    document.getElementById('newsSearch')?.value || '',
-  );
-  const filtered = newsItems.filter((story) => {
-    if (activeFilter === 'saved' && !isStorySaved(story)) return false;
-    if (
-      activeFilter !== 'all' &&
-      activeFilter !== 'saved' &&
-      getStatus(story) !== activeFilter
-    ) {
-      return false;
-    }
-    if (
-      searchTerm &&
-      !normalizeText(`${story.title} ${story.source} ${story.description}`).includes(
-        searchTerm,
-      )
-    ) {
-      return false;
-    }
-    return true;
-  }).sort((first, second) => {
-    const publishedDifference =
-      Date.parse(second.publishedAt) - Date.parse(first.publishedAt);
-    return Number.isNaN(publishedDifference)
-      ? Date.parse(second.receivedAt) - Date.parse(first.receivedAt)
-      : publishedDifference;
-  });
-
-  list.innerHTML = filtered.length
-    ? filtered.map((story) => renderNewsCard(story)).join('')
-    : '<div class="empty">Nenhuma notícia deste filtro foi recebida dos portais.</div>';
-}
-
-function normalizeText(value) {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLocaleLowerCase('pt-BR')
-    .trim();
-}
-
-function renderZoneFeed() {
-  const feed = document.getElementById('zoneFeed');
-  if (!feed) return;
-  const zoneStories = newsItems.filter((story) => story.isZoneMata);
-
-  feed.innerHTML = zoneStories.length
-    ? zoneStories.map((story) => renderNewsCard(story, true)).join('')
-    : '<div class="empty">Ainda não chegaram notícias dos portais sobre os municípios da Zona da Mata. O feed será atualizado automaticamente a cada minuto.</div>';
-}
-
-function renderVideoFeed() {
-  const feed = document.getElementById('videoFeed');
-  if (!feed) return;
-  const videoByUrl = new Map();
-  [...publisherVideos, ...newsItems].forEach((story) => {
-    if (isG1Video(story)) return;
-    const url = videoFeedSource(story);
-    if (!url) return;
-    if (!videoByUrl.has(url)) videoByUrl.set(url, story);
-  });
-  const videos = [...videoByUrl.values()];
-  videos.sort(
-    (first, second) =>
-      new Date(second.publishedAt).getTime() -
-      new Date(first.publishedAt).getTime(),
-  );
-  const scan = window.videoScanStatus;
-  const signature = JSON.stringify(
-    videos.map((story) => [
-      videoFeedSource(story),
-      story.title,
-      story.videoOrientation,
-    ]),
-  );
-  if (videos.length && signature === renderedVideoSignature) return;
-
-  const activeVideoKey = videoPlaylist[activeVideoIndex]
-    ? videoFeedSource(videoPlaylist[activeVideoIndex])
-    : '';
-  videoPlaylist = videos;
-  activeVideoIndex = Math.max(
-    0,
-    videos.findIndex((story) => videoFeedSource(story) === activeVideoKey),
-  );
-  feed.innerHTML = videos.length
-    ? renderVideoPlayer(videos[activeVideoIndex], activeVideoIndex, videos.length)
-    : `<div class="empty">${scan?.pendingStories ? `Procurando vídeos incorporados nas matérias dos portais. ${scan.scannedStories} tentativa(s) concluída(s); ${scan.pendingStories} matéria(s) na fila. A varredura respeita os limites de acesso e pode levar algum tempo.` : 'Nenhum vídeo incorporado foi encontrado nas matérias disponíveis. A varredura dos portais continua a cada minuto.'}</div>`;
-  renderedVideoSignature = signature;
-}
-
-function renderVideoPlayer(story, index, total) {
-  const embedUrl = safeVideoEmbedUrl(story.videoEmbedUrl);
-  const videoUrl = safeHttpUrl(story.videoUrl);
-  const isGloboVideo = story.videoProvider === 'globo';
-  const hasPlayableSource = Boolean(isGloboVideo || embedUrl || videoUrl);
-  const player = isGloboVideo
-    ? `<div class="video-unavailable">${safeHttpUrl(story.imageUrl) ? `<img src="${escapeHtml(safeHttpUrl(story.imageUrl))}" alt="" />` : ''}<span>O g1 exige o player oficial e não permite incorporar este vídeo no GIRO 360.</span></div>`
-    : embedUrl
-    ? `<iframe class="video-player" src="${escapeHtml(embedUrl)}" title="${escapeHtml(story.title)}" loading="lazy" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>`
-    : videoUrl
-      ? `<video class="video-player" src="${escapeHtml(videoUrl)}" poster="${escapeHtml(safeHttpUrl(story.imageUrl))}" controls playsinline preload="metadata">Seu navegador não reproduz este vídeo.</video>`
-      : `<div class="video-unavailable">${safeHttpUrl(story.imageUrl) ? `<img src="${escapeHtml(safeHttpUrl(story.imageUrl))}" alt="" />` : ''}<span>O portal não disponibilizou um player incorporável para este vídeo.</span></div>`;
-  const orientation =
-    story.videoOrientation === 'vertical' ? 'vertical' : 'horizontal';
-
-  return `
-    <article class="video-post video-post-${orientation}" aria-label="Vídeo ${index + 1} de ${total}">
-      <div class="video-player-frame">${player}</div>
-      <div class="video-post-body">
-        <p class="story-source">${escapeHtml(story.source)} · ${orientation === 'vertical' ? 'Vertical' : 'Horizontal'} · <span aria-live="polite">${index + 1} / ${total}</span></p>
-        <h3>${escapeHtml(story.title)}</h3>
-        ${hasPlayableSource && safeHttpUrl(story.url) ? `<a class="action-pill" href="${escapeHtml(safeHttpUrl(story.url))}" target="_blank" rel="noopener noreferrer">${isGloboVideo ? 'Assistir no site oficial do g1' : 'Abrir no portal original'}</a>` : ''}
-      </div>
-      <nav class="video-player-navigation" aria-label="Navegação da playlist">
-        <button class="video-navigation-button" type="button" data-video-step="-1" aria-label="Vídeo anterior"${index === 0 ? ' disabled' : ''}>↑</button>
-        <button class="video-navigation-button" type="button" data-video-step="1" aria-label="Próximo vídeo"${index === total - 1 ? ' disabled' : ''}>↓</button>
-      </nav>
-    </article>`;
-}
-
-function selectVideo(index) {
-  if (index < 0 || index >= videoPlaylist.length || index === activeVideoIndex) return;
-  activeVideoIndex = index;
-  const feed = document.getElementById('videoFeed');
-  if (feed) {
-    feed.innerHTML = renderVideoPlayer(
-      videoPlaylist[activeVideoIndex],
-      activeVideoIndex,
-      videoPlaylist.length,
-    );
-  }
-}
-
-function renderPortalProfiles() {
-  const profiles = document.getElementById('portalProfiles');
-  if (!profiles) return;
-  profiles.innerHTML = feedSources
-    .map((source) => {
-      const count = newsItems.filter((story) => story.source === source.name).length;
-      let faviconUrl = '';
-      let faviconFallbackUrl = '';
-      try {
-        const sourceUrl = new URL(source.siteUrl || source.url);
-        faviconUrl = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(sourceUrl.hostname)}&sz=128`;
-        faviconFallbackUrl = `${sourceUrl.origin}/favicon.ico`;
-      } catch {
-        faviconUrl = '';
-      }
-      return `
-        <button class="portal-profile" type="button" data-portal-profile="${escapeHtml(source.name)}">
-          <span class="portal-avatar" aria-hidden="true">
-            <span class="portal-avatar-fallback">${escapeHtml(source.name.slice(0, 1))}</span>
-            ${faviconUrl ? `<img class="portal-avatar-image" src="${escapeHtml(faviconUrl)}" data-fallback="${escapeHtml(faviconFallbackUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="if(this.dataset.fallback){this.src=this.dataset.fallback;this.dataset.fallback=''}else{this.hidden=true}" />` : ''}
-          </span>
-          <span class="portal-profile-copy">
-            <strong>${escapeHtml(source.name)}</strong>
-            <small>${escapeHtml(source.region)} · ${count} notícias</small>
-          </span>
-        </button>`;
-    })
-    .join('');
-}
-
-function renderPortalStories(sourceName) {
-  const list = document.getElementById('portalStories');
-  if (!list) return;
-  const stories = newsItems.filter((story) => story.source === sourceName);
-  list.innerHTML = stories.length
-    ? `<h3 class="portal-stories-title">${escapeHtml(sourceName)} · ${stories.length} notícias</h3>${stories.map((story) => renderNewsCard(story)).join('')}`
-    : '<div class="empty">Nenhuma notícia recebida deste portal ainda.</div>';
-}
-
-function renderNotifications() {
-  const badges = document.querySelectorAll('#notificationsBadge');
-  const list = document.getElementById('notificationList');
-  const items = newsItems.filter((story) => getStatus(story) === 'new');
-  const zoneBadge = document.getElementById('zoneNotificationsBadge');
-  if (zoneBadge) {
-    const zoneUnreadCount = items.filter((story) => story.isZoneMata).length;
-    zoneBadge.textContent = String(zoneUnreadCount);
-    zoneBadge.classList.toggle('empty', zoneUnreadCount === 0);
-  }
-
-  badges.forEach((badge) => {
-    badge.textContent = String(items.length);
-    badge.style.display = items.length ? 'inline-flex' : 'none';
-  });
-
-  if (!list) return;
-  list.innerHTML = items.length
-    ? items
-        .slice(0, 8)
-        .map(
-          (story) => `
-            <li class="notification-item">
-              <span class="notification-dot"></span>
-              <div>
-                <strong>${escapeHtml(story.source)}</strong>
-                <span>${escapeHtml(story.title)}</span>
-              </div>
-            </li>`,
-        )
-        .join('')
-    : '<li class="empty">Nenhuma notícia nova.</li>';
-}
-
-function renderSyncStatus(data, error = '') {
-  const status = document.getElementById('syncStatus');
-  if (!status) return;
-
-  if (error) {
-    const connectionError = isConnectionError(new Error(error));
-    status.textContent = connectionError
-      ? 'Não foi possível conectar ao servidor do GIRO 360. Verifique se o servidor está ligado e tente novamente.'
-      : `Não foi possível atualizar as notícias: ${error}`;
-    status.classList.add('sync-error');
-    return;
-  }
-
-  const checkedFeeds = (data.feeds || []).filter((feed) => !feed.error).length;
-  const totalFeeds = (data.feeds || []).length;
-  const errors = (data.feeds || []).filter((feed) => feed.error).length;
-  const updatedAt = (staticSnapshotMode ? data.generatedAt : data.updatedAt)
-    ? new Intl.DateTimeFormat('pt-BR', {
-        hour: '2-digit',
-        minute: '2-digit',
-      }).format(new Date(staticSnapshotMode ? data.generatedAt : data.updatedAt))
-    : 'aguardando';
-
-  status.textContent = staticSnapshotMode
-    ? `${checkedFeeds}/${totalFeeds} portais consultados · snapshot do GitHub atualizado ${updatedAt} · publicação automática a cada 15 minutos`
-    : `${checkedFeeds}/${totalFeeds} portais consultados · última verificação ${updatedAt}${errors ? ` · ${errors} fonte(s) indisponível(is)` : ''} · atualização a cada minuto`;
-  status.classList.toggle('sync-error', checkedFeeds === 0);
-}
-
-async function fetchStaticNewsData() {
-  const dataUrl = new URL('news-data.json', document.baseURI);
-  const response = await fetch(dataUrl, { cache: 'no-store' });
-  if (!response.ok) throw new Error(`snapshot respondeu ${response.status}`);
-  const data = await response.json();
-  if (!Array.isArray(data.news) || !Array.isArray(data.feeds)) {
-    throw new Error('snapshot de notícias inválido');
-  }
-  return data;
+function whatsappShareUrl(article) {
+  const title = article.title.trim();
+  const summary = (article.shareSummary || article.description || "").trim().slice(0, 500);
+  const link = safeUrl(article.link);
+  const image = imageUrlFor(article);
+  const lines = [
+    `📰 ${title}`,
+    summary ? `\n${summary}` : "",
+    link ? `\nLeia a matéria: ${link}` : "",
+    image ? `\nImagem: ${image}` : ""
+  ].filter(Boolean);
+  return `https://wa.me/?text=${encodeURIComponent(lines.join("\n"))}`;
 }
 
 async function refreshNews() {
-  let data;
+  if (state.loading) return;
+  state.loading = true;
+  elements.refresh.classList.add("is-loading");
+  elements.refresh.disabled = true;
+  elements.refreshLabel.textContent = "Buscando…";
+  elements.feed.setAttribute("aria-busy", "true");
+  if (!state.articles.length) elements.loading.hidden = false;
+  elements.error.hidden = true;
   try {
-    const response = await fetch('/api/news', { cache: 'no-store' });
+    const response = await fetch(`./data/latest-news.json?check=${Date.now()}`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(15_000)
+    });
     if (!response.ok) {
-      if (response.status !== 404) throw new Error(`servidor respondeu ${response.status}`);
-      data = await fetchStaticNewsData();
-      staticSnapshotMode = true;
-      newsRefreshIntervalMs =
-        data.pollingIntervalMs || 15 * 60 * 1000;
-    } else {
-      data = await response.json();
-      staticSnapshotMode = Boolean(data.staticSnapshot);
-      newsRefreshIntervalMs = staticSnapshotMode
-        ? data.pollingIntervalMs || 15 * 60 * 1000
-        : POLL_INTERVAL_MS;
+      const reason = response.status === 404
+        ? "O feed ainda não foi publicado. Execute a GitHub Action “Atualizar notícias e publicar” no repositório."
+        : `Não foi possível carregar o feed publicado (${response.status}).`;
+      throw new Error(reason);
     }
-  } catch (error) {
-    if (!staticSnapshotMode && !(error instanceof TypeError)) throw error;
-    data = await fetchStaticNewsData();
-    staticSnapshotMode = true;
-    newsRefreshIntervalMs = data.pollingIntervalMs || 15 * 60 * 1000;
-  }
-  if (!Array.isArray(data.news)) throw new Error('resposta inválida do servidor');
-
-  const selectedPortal =
-    document.querySelector('[data-portal-profile].selected')?.dataset.portalProfile;
-  newsItems = data.news;
-  publisherVideos = Array.isArray(data.videos) ? data.videos : [];
-  window.videoScanStatus = data.videoScan || null;
-  renderNews();
-  renderZoneFeed();
-  renderVideoFeed();
-  renderPortalProfiles();
-  if (selectedPortal) {
-    const selectedProfile = [...document.querySelectorAll('[data-portal-profile]')].find(
-      (profile) => profile.dataset.portalProfile === selectedPortal,
-    );
-    selectedProfile?.classList.add('selected');
-    renderPortalStories(selectedPortal);
-  }
-  renderNotifications();
-  renderSyncStatus(data);
-}
-
-function renderSources() {
-  const list = document.getElementById('sourcesList');
-  if (!list) return;
-
-  const portalItems = feedSources
-    .map((source) => {
-      const sourceUrl = safeHttpUrl(source.siteUrl || source.url);
-      const state = source.error
-        ? `Falha: ${source.error}`
-        : source.lastCheckedAt
-          ? staticSnapshotMode
-            ? 'Incluído no snapshot periódico'
-            : 'Monitorando'
-          : 'Aguardando primeira consulta';
-      return `
-        <li class="source-item">
-          <div class="label">
-            <span class="kind">${escapeHtml(source.region)} · ${staticSnapshotMode ? 'RSS no GitHub Pages' : 'RSS monitorado'}</span>
-            ${sourceUrl ? `<a class="value source-link" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(source.name)}</a>` : `<span class="value">${escapeHtml(source.name)}</span>`}
-            ${source.custom ? `<small class="kind">Feed: ${escapeHtml(source.url)}</small>` : ''}
-          </div>
-          <span class="source-state${source.error ? ' source-state-error' : ''}">${escapeHtml(state)}</span>
-          ${source.custom ? `<button class="action-pill" data-remove-monitored-source="${escapeHtml(source.id)}" type="button">Excluir</button>` : ''}
-        </li>`;
-    })
-    .join('');
-  const savedItems = getLocalSources()
-    .map((source) => {
-      const profileUrl = safeHttpUrl(source.profileUrl);
-      const typeLabel = source.type === 'instagram'
-        ? 'Instagram · atalho sem monitoramento'
-        : source.type === 'tiktok'
-          ? 'TikTok · atalho sem monitoramento'
-          : source.type === 'rss'
-            ? 'Feed RSS salvo · não monitorado'
-            : 'Site salvo · não monitorado';
-      return `
-        <li class="source-item">
-          <div class="label">
-            <span class="kind">${escapeHtml(source.publisher ? `${source.publisher} · ${typeLabel}` : typeLabel)}</span>
-            ${profileUrl ? `<a class="value source-link" href="${escapeHtml(profileUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(source.value)}</a>` : `<span class="value">${escapeHtml(source.value)}</span>`}
-          </div>
-          <button class="action-pill" data-remove-source="${escapeHtml(source.id)}" type="button">Excluir</button>
-        </li>`;
-    })
-    .join('');
-
-  list.innerHTML = portalItems + savedItems ||
-    '<li class="empty">Nenhuma fonte disponível.</li>';
-  renderPortalProfiles();
-}
-
-async function refreshSources() {
-  const response = await fetch('/api/sources', { cache: 'no-store' });
-  let data;
-  if (!response.ok) {
-    if (response.status !== 404) throw new Error(`servidor respondeu ${response.status}`);
-    data = await fetchStaticNewsData();
-    staticSnapshotMode = true;
-    newsRefreshIntervalMs =
-      data.pollingIntervalMs || 15 * 60 * 1000;
-  } else {
-    data = await response.json();
-  }
-  feedSources = Array.isArray(data.sources) ? data.sources : [];
-  if (!feedSources.length && Array.isArray(data.feeds)) {
-    feedSources = data.feeds;
-  }
-  renderSources();
-}
-
-function isConnectionError(error) {
-  return (
-    error instanceof TypeError ||
-    ['Failed to fetch', 'Load failed', 'NetworkError when attempting to fetch resource.'].includes(
-      error.message,
-    )
-  );
-}
-
-function apiResponseError(response) {
-  if (response.status === 404) {
-    return new Error(
-      'Esta função exige o servidor GIRO 360. No GitHub Pages, o site usa notícias pré-atualizadas automaticamente; para cadastrar fontes ou ativar notificações, use o servidor Node.',
-    );
-  }
-  return new Error(`servidor respondeu ${response.status}`);
-}
-
-function toggleNotificationPanel(forceOpen) {
-  const panel = document.getElementById('notificationPanel');
-  if (!panel) return;
-  const shouldOpen =
-    typeof forceOpen === 'boolean'
-      ? forceOpen
-      : panel.classList.contains('hidden');
-  panel.classList.toggle('hidden', !shouldOpen);
-}
-
-function urlBase64ToUint8Array(base64String) {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const rawData = atob(base64);
-  return Uint8Array.from(rawData, (character) => character.charCodeAt(0));
-}
-
-function isIosDevice() {
-  return /iphone|ipad|ipod/i.test(navigator.userAgent);
-}
-
-function isInstalledPwa() {
-  return window.matchMedia('(display-mode: standalone)').matches ||
-    navigator.standalone === true;
-}
-
-function renderPushState(message) {
-  const button = document.getElementById('pushToggle');
-  const status = document.getElementById('pushStatus');
-  if (message && status) status.textContent = message;
-  if (!button) return;
-
-  const enabled = localStorage.getItem(STORAGE_KEYS.pushEnabled) === 'true';
-  button.setAttribute('aria-pressed', String(enabled));
-  button.textContent = enabled
-    ? 'Desativar notificações'
-    : 'Ativar notificações';
-  button.classList.toggle('enabled', enabled);
-}
-
-async function enablePushNotifications() {
-  const status = document.getElementById('pushStatus');
-  if (staticSnapshotMode) {
-    renderPushState('Notificações push exigem o servidor Node; o GitHub Pages publica apenas o snapshot das notícias.');
-    return;
-  }
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-    renderPushState('Este navegador não oferece notificações push.');
-    return;
-  }
-
-  if (isIosDevice() && !isInstalledPwa()) {
-    renderPushState('No iPhone, primeiro use Compartilhar → Adicionar à Tela de Início; abra o ícone instalado e ative os alertas.');
-    return;
-  }
-
-  if (!('Notification' in window)) {
-    renderPushState('Este navegador não oferece notificações.');
-    return;
-  }
-
-  const permission =
-    Notification.permission === 'granted'
-      ? 'granted'
-      : await Notification.requestPermission();
-  if (permission !== 'granted') {
-    renderPushState('Permissão negada. Ative as notificações do GIRO 360 nos ajustes do navegador.');
-    return;
-  }
-
-  const keyResponse = await fetch('/api/push/public-key', { cache: 'no-store' });
-  if (!keyResponse.ok) throw new Error('Não foi possível obter a chave de notificações.');
-  const keyData = await keyResponse.json();
-  if (!keyData.enabled || !keyData.publicKey) {
-    renderPushState('O servidor ainda não está configurado para Web Push.');
-    return;
-  }
-
-  const registration = await navigator.serviceWorker.register('./service-worker.js', {
-    scope: './',
-  });
-  const subscription = await registration.pushManager.subscribe({
-    userVisibleOnly: true,
-    applicationServerKey: urlBase64ToUint8Array(keyData.publicKey),
-  });
-  const saveResponse = await fetch('/api/push/subscribe', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(subscription),
-  });
-
-  if (!saveResponse.ok) {
-    const error = await saveResponse.json();
-    await subscription.unsubscribe();
-    throw new Error(error.error || 'Não foi possível registrar este dispositivo.');
-  }
-
-  localStorage.setItem(STORAGE_KEYS.pushEnabled, 'true');
-  renderPushState('Notificações ativadas. Novas notícias serão enviadas pelo servidor.');
-}
-
-async function disablePushNotifications() {
-  const registration = await navigator.serviceWorker.getRegistration();
-  const subscription = await registration?.pushManager.getSubscription();
-  if (subscription) {
-    const response = await fetch('/api/push/subscribe', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ endpoint: subscription.endpoint }),
-    });
-    if (!response.ok) throw new Error('Não foi possível desativar as notificações no servidor.');
-    await subscription.unsubscribe();
-  }
-
-  localStorage.setItem(STORAGE_KEYS.pushEnabled, 'false');
-  renderPushState('Alertas do iPhone desativados.');
-}
-
-async function togglePushNotifications() {
-  const button = document.getElementById('pushToggle');
-  const enabled = localStorage.getItem(STORAGE_KEYS.pushEnabled) === 'true';
-  if (button) button.disabled = true;
-  try {
-    if (enabled) {
-      await disablePushNotifications();
-    } else {
-      await enablePushNotifications();
+    const snapshot = await response.json();
+    if (!snapshot || !Array.isArray(snapshot.articles)) {
+      throw new Error("O arquivo de notícias publicado está em um formato inválido.");
     }
+    const previousIds = new Set(state.articles.map(storyId));
+    const unique = new Map();
+    for (const article of snapshot.articles) {
+      const link = safeUrl(article?.link);
+      if (typeof article?.title !== "string" || !link) continue;
+      const normalized = { ...article, link, published: article.published || snapshot.updatedAt || new Date().toISOString() };
+      if (!unique.has(storyId(normalized))) unique.set(storyId(normalized), normalized);
+    }
+    const nextArticles = Array.from(unique.values()).sort((a, b) => new Date(b.published) - new Date(a.published));
+    const newArticles = nextArticles.filter((article) => !previousIds.has(storyId(article)));
+    if (previousIds.size) await notifyNewArticles(newArticles);
+    state.articles = nextArticles;
+    state.hasLoadedData = true;
+    const sourceUpdatedAt = snapshot.updatedAt ? formatTime(snapshot.updatedAt) : "ainda não publicados";
+    elements.updated.textContent = `Conferido às ${formatTime(new Date())} · portais atualizados ${sourceUpdatedAt} · próxima checagem em 1 min`;
   } catch (error) {
-    renderPushState(`Erro ao alterar notificações: ${error.message}`);
+    elements.error.textContent = `${error.message} Confira sua conexão e tente atualizar novamente.`;
+    elements.error.hidden = false;
+    elements.updated.textContent = `Última tentativa às ${formatTime(new Date())}`;
   } finally {
-    if (button) button.disabled = false;
+    state.loading = false;
+    elements.loading.hidden = true;
+    elements.refresh.classList.remove("is-loading");
+    elements.refresh.disabled = false;
+    elements.refreshLabel.textContent = "Atualizar";
+    elements.feed.setAttribute("aria-busy", "false");
+    renderNews();
   }
 }
 
-function changeView(viewName) {
-  document.querySelectorAll('[data-view]:not([href])').forEach((button) => {
-    button.classList.toggle('active', button.dataset.view === viewName);
+function currentArticles() {
+  const query = normalizeText(elements.searchInput.value.trim());
+  const articles = state.articles.filter((article) => {
+    const categoryMatch = state.category === "all"
+      || (state.category === "mata" && (article.feed === "mata" || isZonaDaMata(article)))
+      || (state.category === "alagoas" && (article.feed === "alagoas" || isAlagoasArticle(article)))
+      || (state.category === "brasil" && article.feed === "brasil" && !isAlagoasArticle(article) && !isZonaDaMata(article));
+    const searchMatch = !query || normalizeText(`${article.title} ${article.description} ${article.source}`).includes(query);
+    return categoryMatch && searchMatch;
   });
-  document.getElementById('newsView')?.classList.toggle('hidden', viewName !== 'news');
-  document.getElementById('zoneView')?.classList.toggle('hidden', viewName !== 'zone');
-  document.getElementById('videoView')?.classList.toggle('hidden', viewName !== 'videos');
-  document.getElementById('sourceView')?.classList.toggle('hidden', viewName !== 'sources');
-  if (viewName === 'sources') {
-    refreshSources().catch((error) => {
-      console.error('Source refresh failed:', error);
-    });
+  if (state.category === "mata") {
+    articles.sort((left, right) => Number(Boolean(right.image || right.video)) - Number(Boolean(left.image || left.video)) || new Date(right.published) - new Date(left.published));
   }
+  return articles;
 }
 
-function attachEventHandlers() {
-  document.getElementById('newsSearch')?.addEventListener('input', renderNews);
+function imageMarkup(article) {
+  const image = imageUrlFor(article);
+  if (!image) return `<span class="story-image-fallback">${FALLBACK_ART}</span>`;
+  return `<img class="story-image" src="${escapeHtml(image)}" alt="" loading="lazy" referrerpolicy="no-referrer">`;
+}
 
-  document.querySelectorAll('.tab').forEach((button) => {
-    button.addEventListener('click', () => {
-      document.querySelectorAll('.tab').forEach((tab) => tab.classList.remove('active'));
-      button.classList.add('active');
-      renderNews();
-    });
-  });
+function readerMediaMarkup(article) {
+  const video = safeVideoUrl(article.video);
+  if (video && /\.(?:mp4|webm|m3u8)(?:$|[?#])/i.test(video)) {
+    return `<video class="reader-video" src="${escapeHtml(video)}" title="${escapeHtml(article.title)}" controls playsinline preload="metadata"></video>`;
+  }
+  if (video) {
+    return `<iframe class="reader-video" src="${escapeHtml(video)}" title="${escapeHtml(article.title)}" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>`;
+  }
+  return imageMarkup(article);
+}
 
-  document.querySelectorAll('[data-view]:not([href])').forEach((button) => {
-    button.addEventListener('click', () => changeView(button.dataset.view));
-  });
-  document.getElementById('videoFeed')?.addEventListener('click', (event) => {
-    if (!(event.target instanceof Element)) return;
-    const navigationButton = event.target.closest('[data-video-step]');
-    if (!navigationButton) return;
-    selectVideo(activeVideoIndex + Number(navigationButton.dataset.videoStep));
-  });
-  document.getElementById('videoFeed')?.addEventListener('touchstart', (event) => {
-    if (event.touches.length === 1) {
-      videoSwipeStartY = event.touches[0].clientY;
-    }
-  }, { passive: true });
-  document.getElementById('videoFeed')?.addEventListener('touchend', (event) => {
-    const startY = videoSwipeStartY;
-    videoSwipeStartY = null;
-    if (typeof startY !== 'number' || event.changedTouches.length !== 1) return;
-    const distance = event.changedTouches[0].clientY - startY;
-    if (Math.abs(distance) < 60) return;
-    selectVideo(activeVideoIndex + (distance < 0 ? 1 : -1));
-  }, { passive: true });
-
-  document.querySelectorAll('#toggleNotifications').forEach((button) => {
-    button.addEventListener('click', () => toggleNotificationPanel());
-  });
-
-  document.getElementById('closeNotifications')?.addEventListener('click', () =>
-    toggleNotificationPanel(false),
-  );
-  document.getElementById('pushToggle')?.addEventListener('click', togglePushNotifications);
-  document.getElementById('portalProfiles')?.addEventListener('click', (event) => {
-    if (!(event.target instanceof Element)) return;
-    const profile = event.target.closest('[data-portal-profile]');
-    if (!profile) return;
-    document.querySelectorAll('[data-portal-profile]').forEach((item) =>
-      item.classList.toggle('selected', item === profile),
-    );
-    renderPortalStories(profile.dataset.portalProfile);
-  });
-
-  const sourceForm = document.getElementById('sourceForm');
-  sourceForm?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const input = document.getElementById('sourceInput');
-    const status = document.getElementById('sourceFormStatus');
-    const type =
-      document.querySelector('.source-type.active')?.dataset.sourceType ||
-      'instagram';
-    const values = (input?.value || '')
-      .split(/[,;\n]+/)
-      .map((value) => value.trim())
-      .filter(Boolean);
-    if (!values.length) {
-      input?.focus();
-      if (status) {
-        status.textContent = 'Digite pelo menos um perfil ou endereço.';
-        status.classList.add('error');
-      }
-      return;
-    }
-
-    const sources = getLocalSources();
-    const existingKeys = new Set(
-      sources.map(
-        (source) => `${source.type}:${source.value.toLocaleLowerCase('pt-BR')}`,
-      ),
-    );
-    const added = [];
-    const duplicates = [];
-    const invalid = [];
-    const serverSources = [];
-    values.forEach((value) => {
-      try {
-        const normalized = normalizeSavedSource(type, value);
-        const key = `${normalized.type}:${normalized.value.toLocaleLowerCase('pt-BR')}`;
-        const existsOnServer = feedSources.some((source) =>
-          [source.siteUrl, source.url]
-            .filter(Boolean)
-            .some((url) => url.toLocaleLowerCase('pt-BR') === normalized.value.toLocaleLowerCase('pt-BR')),
-        );
-        if (existingKeys.has(key) || existsOnServer) {
-          duplicates.push(value);
-          return;
-        }
-        existingKeys.add(key);
-        if (type === 'site' || type === 'rss') {
-          serverSources.push({ type, url: normalized.value, original: value });
-        } else {
-          added.push({ id: crypto.randomUUID(), ...normalized });
-        }
-      } catch (error) {
-        invalid.push(`${value}: ${error.message}`);
-      }
-    });
-
-    if (added.length) {
-      saveData(STORAGE_KEYS.sources, [...sources, ...added]);
-      renderSources();
-    }
-
-    if (serverSources.length) {
-      const submitButton = sourceForm.querySelector('[type="submit"]');
-      if (submitButton) submitButton.disabled = true;
-      if (status) {
-        status.textContent = 'Conectando os sites ao monitoramento do servidor…';
-        status.classList.remove('error');
-      }
-      try {
-        const response = await fetch('/api/sources', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sources: serverSources.map(({ type: sourceType, url }) => ({
-              type: sourceType,
-              url,
-            })),
-          }),
-        });
-        if (!response.ok) {
-          throw apiResponseError(response);
-        }
-        const data = await response.json();
-        data.results.forEach((result, index) => {
-          if (result.added) added.push(result);
-          else if (result.duplicate) duplicates.push(serverSources[index].original);
-          else invalid.push(`${serverSources[index].original}: ${result.error}`);
-        });
-        await refreshSources();
-        refreshNews().catch((error) => {
-          console.error('News refresh after source registration failed:', error);
-        });
-      } catch (error) {
-        const message = isConnectionError(error)
-          ? 'não foi possível conectar ao servidor; confirme se o GIRO 360 está ligado'
-          : error.message;
-        serverSources.forEach(({ original }) => invalid.push(`${original}: ${message}`));
-      } finally {
-        if (submitButton) submitButton.disabled = false;
-      }
-    }
-
-    if (status) {
-      const messages = [];
-      const registered = added.length;
-      if (registered) messages.push(`${registered} fonte(s) adicionada(s) ao sistema.`);
-      if (duplicates.length) messages.push(`${duplicates.length} duplicada(s).`);
-      if (invalid.length) {
-        messages.push(`Não adicionadas: ${invalid.slice(0, 3).join('; ')}${invalid.length > 3 ? `; e mais ${invalid.length - 3}` : ''}.`);
-      }
-      status.textContent = messages.join(' ') || 'Nenhuma fonte nova para adicionar.';
-      status.classList.toggle('error', invalid.length > 0);
-    }
-    if (added.length) input.value = '';
-  });
-
-  document.querySelectorAll('.source-type').forEach((button) => {
-    button.addEventListener('click', () => {
-      document.querySelectorAll('.source-type').forEach((typeButton) =>
-        typeButton.classList.remove('active'),
-      );
-      button.classList.add('active');
-      const input = document.getElementById('sourceInput');
-      const status = document.getElementById('sourceFormStatus');
-      if (input) {
-        const placeholders = {
-          instagram: '@perfil1, @perfil2',
-          tiktok: '@perfil1, @perfil2',
-          site: 'https://portal.com, https://outro.com',
-          rss: 'https://portal.com/feed/, https://www.youtube.com/feeds/videos.xml?channel_id=ID_DO_CANAL',
-        };
-        input.placeholder = placeholders[button.dataset.sourceType];
-      }
-      if (status) {
-        status.textContent = '';
-        status.classList.remove('error');
-      }
-    });
-  });
-
-  document.addEventListener('click', (event) => {
-    if (!(event.target instanceof Element)) return;
-    const openStoryButton = event.target.closest('[data-open-story]');
-    if (openStoryButton) {
-      openStory(newsItems.find((story) => story.id === openStoryButton.dataset.openStory));
-      return;
-    }
-
-    const markButton = event.target.closest('[data-mark-story]');
-    if (markButton) {
-      const statuses = getStatuses();
-      statuses[markButton.dataset.markStory] = markButton.dataset.nextStatus;
-      saveData(STORAGE_KEYS.statuses, statuses);
-      renderNews();
-      renderNotifications();
-      const nextStatus = markButton.dataset.nextStatus === 'read' ? 'reviewed' : 'read';
-      markButton.dataset.nextStatus = nextStatus;
-      markButton.textContent = nextStatus === 'read' ? 'Marcar como lida' : 'Marcar para revisar';
-      return;
-    }
-
-    const saveButton = event.target.closest('[data-save-story]');
-    if (saveButton) {
-      const id = saveButton.dataset.saveStory;
-      const saved = new Set(getSavedStories());
-      if (saved.has(id)) saved.delete(id);
-      else saved.add(id);
-      saveData(STORAGE_KEYS.savedStories, [...saved]);
-      renderNews();
-      renderZoneFeed();
-      renderVideoFeed();
-      const selectedPortal =
-        document.querySelector('[data-portal-profile].selected')?.dataset.portalProfile;
-      if (selectedPortal) renderPortalStories(selectedPortal);
-      document
-        .querySelectorAll('#storyDialog [data-save-story]')
-        .forEach((button) => {
-          if (button.dataset.saveStory === id) {
-            button.textContent = isStorySaved({ id })
-              ? 'Remover dos salvos'
-              : 'Salvar notícia';
-          }
-        });
-      return;
-    }
-
-    const removeButton = event.target.closest('[data-remove-source]');
-    if (removeButton) {
-      const nextSources = getLocalSources().filter(
-        (source) => source.id !== removeButton.dataset.removeSource,
-      );
-      saveData(STORAGE_KEYS.sources, nextSources);
-      renderSources();
-      return;
-    }
-
-    const removeMonitoredButton = event.target.closest('[data-remove-monitored-source]');
-    if (removeMonitoredButton) {
-      removeMonitoredButton.disabled = true;
-      fetch('/api/sources', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: removeMonitoredButton.dataset.removeMonitoredSource }),
-      })
-      .then(async (response) => {
-        if (!response.ok) throw apiResponseError(response);
-        await refreshSources();
-          await refreshNews();
-        })
-        .catch((error) => {
-          console.error('Monitored source removal failed:', error);
-          removeMonitoredButton.disabled = false;
-          const status = document.getElementById('sourceFormStatus');
-          if (status) {
-            status.textContent = `Erro ao excluir a fonte: ${error.message}`;
-            status.classList.add('error');
-          }
-        });
-    }
-  });
-
-  document.getElementById('closeStoryDialog')?.addEventListener('click', () => {
-    document.getElementById('storyDialog')?.close();
-  });
-  document.getElementById('storyDialog')?.addEventListener('click', (event) => {
-    if (event.target === event.currentTarget) event.currentTarget.close();
+function watchImageErrors(container) {
+  container.querySelectorAll(".story-image").forEach((image) => {
+    image.addEventListener("error", () => {
+      const fallback = document.createElement("span");
+      fallback.className = "story-image-fallback";
+      fallback.innerHTML = FALLBACK_ART;
+      image.replaceWith(fallback);
+    }, { once: true });
   });
 }
 
-function openStory(story) {
-  if (!story) return;
-  const dialog = document.getElementById('storyDialog');
-  const content = document.getElementById('storyDialogContent');
-  const source = document.getElementById('storyDialogSource');
-  if (!dialog || !content || !source) return;
+function openArticle(article, trigger) {
+  if (!article) return;
+  const link = safeUrl(article.link);
+  elements.readerCategory.textContent = categoryFor(article);
+  elements.readerTitle.textContent = article.title;
+  elements.readerSource.textContent = article.source;
+  elements.readerTime.textContent = formatTime(article.published);
+  elements.readerMedia.innerHTML = readerMediaMarkup(article);
+  watchImageErrors(elements.readerMedia);
+  elements.readerBody.textContent = (article.shareSummary || article.description)?.trim()
+    || "Ainda não há um resumo disponível para esta notícia.";
+  elements.readerOriginal.href = link;
+  elements.readerOriginal.hidden = !link;
+  elements.readerShare.href = whatsappShareUrl(article);
+  state.readerReturnFocus = trigger || document.activeElement;
+  elements.reader.hidden = false;
+  document.querySelector(".app-shell").inert = true;
+  document.body.classList.add("reader-open");
+  elements.readerClose.focus();
+  if (location.hash !== "#materia") history.pushState({ giroReader: true }, "", "#materia");
+}
 
-  source.textContent = `${story.source} · chegou ${formatDate(story.receivedAt || story.publishedAt)}`;
-  const status = getStatus(story);
-  const hasFeedContent = Boolean(story.description?.trim());
-  const videoEmbedUrl = safeVideoEmbedUrl(story.videoEmbedUrl);
-  const previewRequest = ++activeArticlePreviewRequest;
-  content.innerHTML = `
-    <h2 id="storyDialogTitle">${escapeHtml(story.title)}</h2>
-    ${story.imageUrl ? `<img class="dialog-story-image" src="${escapeHtml(safeHttpUrl(story.imageUrl))}" alt="" />` : ''}
-    ${hasFeedContent ? `<p class="feed-attribution">Conteúdo disponibilizado no feed público de ${escapeHtml(story.source)}:</p><p class="dialog-story-description">${escapeHtml(story.description)}</p>` : `<p class="feed-attribution" data-article-preview-attribution>Buscando uma descrição pública de ${escapeHtml(story.source)}…</p><p class="dialog-story-description" data-article-preview-text>O feed não inclui o texto da matéria. Aguarde enquanto consultamos apenas o trecho de apresentação publicado pelo portal.</p>`}
-    ${videoEmbedUrl ? `<iframe class="dialog-story-video story-video-embed" src="${escapeHtml(videoEmbedUrl)}" title="${escapeHtml(story.title)}" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>` : ''}
-    ${story.videoUrl ? `<video class="dialog-story-video" src="${escapeHtml(safeHttpUrl(story.videoUrl))}" controls playsinline preload="metadata"></video>` : ''}
-    <div class="dialog-story-actions">
-      <button class="action-pill" type="button" data-mark-story="${escapeHtml(story.id)}" data-next-status="${status === 'new' ? 'read' : 'reviewed'}">${status === 'new' ? 'Marcar como lida' : 'Marcar para revisar'}</button>
-      <button class="action-pill" type="button" data-save-story="${escapeHtml(story.id)}">${isStorySaved(story) ? 'Remover dos salvos' : 'Salvar notícia'}</button>
-      ${whatsappLink(story) ? `<a class="whatsapp-button" href="${escapeHtml(whatsappLink(story))}" target="_blank" rel="noopener noreferrer">Enviar pelo WhatsApp</a>` : ''}
-      ${safeHttpUrl(story.url) ? `<a class="action-pill" href="${escapeHtml(safeHttpUrl(story.url))}" target="_blank" rel="noopener noreferrer">Ver matéria original</a>` : ''}
-    </div>`;
-  if (!dialog.open) dialog.showModal();
-  if (!hasFeedContent) {
-    loadArticlePreview(story, content, previewRequest).catch((error) => {
-      console.error('Unable to load article preview:', error);
-      if (previewRequest !== activeArticlePreviewRequest) return;
-      const attribution = content.querySelector('[data-article-preview-attribution]');
-      const previewText = content.querySelector('[data-article-preview-text]');
-      if (attribution) attribution.textContent = 'Prévia da matéria indisponível.';
-      if (previewText) {
-        previewText.textContent = `${error.message} O texto integral só pode ser exibido quando o portal o disponibiliza no feed ou autoriza seu uso.`;
-      }
-    });
+function closeArticle() {
+  if (elements.reader.hidden) return;
+  elements.reader.hidden = true;
+  elements.readerMedia.replaceChildren();
+  document.querySelector(".app-shell").inert = false;
+  document.body.classList.remove("reader-open");
+  state.readerReturnFocus?.focus?.();
+  state.readerReturnFocus = null;
+}
+
+function handleReaderClose() {
+  if (history.state?.giroReader && location.hash === "#materia") {
+    history.back();
+  } else {
+    closeArticle();
   }
 }
 
-async function loadArticlePreview(story, content, requestId) {
-  if (staticSnapshotMode) {
-    throw new Error(
-      'A prévia do portal exige o servidor Node; no GitHub Pages estático, só o texto publicado no RSS está disponível.',
-    );
-  }
-  const articleUrl = safeHttpUrl(story.url);
-  if (!articleUrl) throw new Error('O endereço desta matéria é inválido.');
+function renderNews() {
+  const articles = currentArticles();
+  state.visibleArticles = articles.slice(0, 60);
+  elements.feed.innerHTML = state.visibleArticles.map((article, index) => {
+    const link = safeUrl(article.link);
+    const hasVideo = Boolean(safeVideoUrl(article.video));
+    const mediaClass = state.category === "mata" && (article.image || hasVideo) ? " mata-media-card" : "";
+    return `<article class="news-card${mediaClass}" data-story-index="${index}">
+      <button class="story-cover" type="button" data-open-story="${index}" aria-label="Ler matéria: ${escapeHtml(article.title)}">
+        <span class="story-image-wrap">
+        ${imageMarkup(article)}
+        <span class="story-category">${escapeHtml(categoryFor(article))}</span>
+        ${hasVideo ? '<span class="story-video" aria-label="Vídeo"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m5 3 8 5-8 5V3Z"></path></svg></span>' : ""}
+        </span>
+      </button>
+      <div class="story-content">
+        <div class="story-meta"><span class="story-source">${escapeHtml(article.source)}</span><time>${escapeHtml(formatTime(article.published))}</time></div>
+        <h3><button class="story-title" type="button" data-open-story="${index}">${escapeHtml(article.title)}</button></h3>
+        ${article.description ? `<p class="story-description">${escapeHtml(article.description)}</p>` : ""}
+        <div class="story-footer">
+          <button class="read-link" type="button" data-open-story="${index}">Ler matéria ↗</button>
+          <a class="story-share" href="${escapeHtml(whatsappShareUrl(article))}" target="_blank" rel="noopener noreferrer" aria-label="Compartilhar ${escapeHtml(article.title)} no WhatsApp">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.4 11.7a8.4 8.4 0 0 1-12.4 7.4L3 20l.9-4.8A8.4 8.4 0 1 1 20.4 11.7Z"></path><path d="M8 8.1c.2-.4.4-.4.7-.4h.4c.2 0 .3.1.4.4l.7 1.7c.1.2 0 .4-.1.6l-.5.6c-.2.2-.2.3-.1.5.6 1 1.4 1.8 2.5 2.3.2.1.4.1.5-.1l.7-.8c.2-.2.4-.2.6-.1l1.7.8c.2.1.4.2.4.4 0 .2-.1 1-.6 1.4-.5.5-1.4.7-2 .6-.6-.1-1.5-.4-2.5-.9a9.4 9.4 0 0 1-3.5-3.1c-.9-1.2-1.2-2.2-1.3-2.7-.1-.6.2-1.2.5-1.5Z"></path></svg>
+            <span>WhatsApp</span>
+          </a>
+          ${link ? `<a class="source-link" href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer" aria-label="Abrir ${escapeHtml(article.source)} em uma nova aba">Portal original ↗</a>` : ""}
+        </div>
+      </div>
+    </article>`;
+  }).join("");
+  watchImageErrors(elements.feed);
+  elements.empty.hidden = articles.length !== 0 || !state.hasLoadedData;
+}
 
-  const response = await fetch(
-    `/api/article-preview?url=${encodeURIComponent(articleUrl)}`,
-    { cache: 'no-store' },
-  );
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error || `servidor respondeu ${response.status}`);
-  }
-  if (
-    requestId !== activeArticlePreviewRequest ||
-    !document.getElementById('storyDialog')?.open
-  ) {
+function setCategory(category) {
+  state.category = category;
+  elements.feed.classList.toggle("is-mata", category === "mata");
+  document.querySelectorAll(".category-tab").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.category === category);
+  });
+  document.querySelectorAll(".bottom-link[data-category]").forEach((button) => {
+    button.classList.toggle("is-selected", button.dataset.category === category);
+  });
+  const names = { all: "Agora no Giro", mata: "Zona da Mata", alagoas: "Alagoas", brasil: "Brasil" };
+  document.querySelector("#stories-heading").textContent = names[category];
+  renderNews();
+  document.querySelector("#stories-heading").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function updateNotificationControls(enabled) {
+  elements.notificationToggle.setAttribute("aria-pressed", String(enabled));
+  elements.notificationLabel.textContent = enabled ? "Ativado" : "Ativar";
+  elements.alertStatus.textContent = enabled
+    ? "Alertas ativos: avisaremos quando surgirem notícias novas."
+    : "Ative as notificações para receber alertas enquanto acompanha o Giro.";
+  localStorage.setItem("giro360-notifications", String(enabled));
+}
+
+async function setNotificationsEnabled() {
+  if (localStorage.getItem("giro360-notifications") === "true") {
+    updateNotificationControls(false);
     return;
   }
-
-  const attribution = content.querySelector('[data-article-preview-attribution]');
-  const previewText = content.querySelector('[data-article-preview-text]');
-  if (attribution) {
-    attribution.textContent = `Trecho de apresentação publicado por ${story.source}; o texto integral não está disponível no feed.`;
+  if (!("Notification" in window) || !("serviceWorker" in navigator)) {
+    elements.alertStatus.textContent = "Este navegador não oferece notificações web. Tente instalar o Giro pelo Safari no iPhone.";
+    return;
   }
-  if (previewText) previewText.textContent = data.excerpt;
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") {
+    elements.alertStatus.textContent = "Permissão não concedida. Autorize as notificações nas configurações do navegador e tente novamente.";
+    updateNotificationControls(false);
+    return;
+  }
+  updateNotificationControls(true);
+  if (!state.articles.length) await refreshNews();
 }
 
-async function init() {
-  seedOfficialSocialProfiles();
-  attachEventHandlers();
-  renderPushState(
-    localStorage.getItem(STORAGE_KEYS.pushEnabled) === 'true'
-      ? 'Notificações ativadas neste dispositivo.'
-      : 'Alertas do iPhone desativados.',
-  );
-
-  try {
-    if ('serviceWorker' in navigator) {
-      await navigator.serviceWorker.register('./service-worker.js', { scope: './' });
-    }
-  } catch (error) {
-    console.error('Service worker registration failed:', error);
-  }
-
-  await Promise.allSettled([refreshNews(), refreshSources()]).then((results) => {
-    results.forEach((result) => {
-      if (result.status === 'rejected') {
-        console.error('Initial data loading failed:', result.reason);
-        renderSyncStatus(null, result.reason.message);
-      }
-    });
+async function notifyNewArticles(articles) {
+  if (!articles.length || localStorage.getItem("giro360-notifications") !== "true" || Notification.permission !== "granted") return;
+  const registration = await navigator.serviceWorker.ready;
+  const categories = [...new Set(articles.map(categoryFor))];
+  const title = categories.length === 1 && categories[0] === "Zona da Mata"
+    ? "Novidade na Zona da Mata"
+    : categories.length === 1 ? `Novidades · ${categories[0]}` : "Novidades no Giro 360";
+  const headlines = articles.slice(0, 2).map((article) => article.title).join(" · ");
+  const remainder = articles.length > 2 ? ` · +${articles.length - 2} notícias` : "";
+  await registration.showNotification(title, {
+    body: `${headlines}${remainder}`.slice(0, 220),
+    icon: "./icon.svg",
+    badge: "./icon.svg",
+    tag: `giro360-${storyId(articles[0])}`,
+    data: { url: articles[0].link }
   });
-
-  const notificationStoryId = new URLSearchParams(window.location.search).get('story');
-  if (notificationStoryId) {
-    const story = newsItems.find((item) => item.id === notificationStoryId);
-    if (story) openStory(story);
-  }
-
-  const scheduleNewsRefresh = () => {
-    setTimeout(async () => {
-      try {
-        await refreshNews();
-      } catch (error) {
-        console.error('Automatic news refresh failed:', error);
-        renderSyncStatus(null, error.message);
-      } finally {
-        scheduleNewsRefresh();
-      }
-    }, newsRefreshIntervalMs);
-  };
-  scheduleNewsRefresh();
 }
 
-document.addEventListener('DOMContentLoaded', init);
+function setupInstallPrompt() {
+  const isAppleMobile = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  if (isAppleMobile) elements.installButton.hidden = false;
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    state.installedPrompt = event;
+    elements.installButton.hidden = false;
+  });
+  window.addEventListener("appinstalled", () => {
+    state.installedPrompt = null;
+    elements.installButton.hidden = true;
+  });
+  elements.installButton.addEventListener("click", async () => {
+    if (state.installedPrompt) {
+      state.installedPrompt.prompt();
+      await state.installedPrompt.userChoice;
+      state.installedPrompt = null;
+      elements.installButton.hidden = true;
+      return;
+    }
+    if (isAppleMobile) {
+      elements.alertStatus.textContent = "No Safari, toque em Compartilhar e escolha “Adicionar à Tela de Início”. Abra o ícone instalado para ativar os alertas.";
+      document.querySelector(".alert-card").scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  });
+}
+
+document.querySelectorAll(".category-tab, .bottom-link[data-category]").forEach((button) => {
+  button.addEventListener("click", () => setCategory(button.dataset.category));
+});
+elements.refresh.addEventListener("click", refreshNews);
+elements.searchToggle.addEventListener("click", () => {
+  const isHidden = elements.searchPanel.hidden;
+  elements.searchPanel.hidden = !isHidden;
+  elements.searchToggle.setAttribute("aria-expanded", String(isHidden));
+  if (isHidden) elements.searchInput.focus();
+});
+elements.searchInput.addEventListener("input", renderNews);
+elements.notificationToggle.addEventListener("click", setNotificationsEnabled);
+document.querySelector("#bottom-alerts").addEventListener("click", () => {
+  document.querySelector(".alert-card").scrollIntoView({ behavior: "smooth", block: "center" });
+});
+setupInstallPrompt();
+document.querySelector("#whatsapp-link").href = `https://wa.me/?text=${encodeURIComponent(`Confira o Giro 360, sua central de notícias: ${location.href}`)}`;
+elements.feed.addEventListener("click", (event) => {
+  if (event.target.closest("a")) return;
+  const trigger = event.target.closest("[data-open-story]");
+  const card = event.target.closest(".news-card[data-story-index]");
+  if (!trigger && !card) return;
+  const index = Number(trigger?.dataset.openStory ?? card?.dataset.storyIndex);
+  const article = state.visibleArticles[index];
+  openArticle(article, trigger);
+});
+elements.readerClose.addEventListener("click", handleReaderClose);
+window.addEventListener("popstate", () => {
+  if (!elements.reader.hidden) closeArticle();
+});
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !elements.reader.hidden) handleReaderClose();
+});
+
+if (localStorage.getItem("giro360-notifications") === "true" && "Notification" in window && Notification.permission === "granted") {
+  elements.notificationToggle.setAttribute("aria-pressed", "true");
+  elements.notificationLabel.textContent = "Ativado";
+  elements.alertStatus.textContent = "Alertas ativos: avisaremos quando surgirem notícias novas.";
+}
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("./sw.js").catch((error) => {
+    elements.alertStatus.textContent = `Não foi possível preparar o app offline: ${error.message}`;
+  });
+}
+
+refreshNews();
+window.setInterval(refreshNews, REFRESH_INTERVAL);
