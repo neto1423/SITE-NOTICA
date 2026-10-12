@@ -1,12 +1,12 @@
-const CACHE_NAME = 'giro360-shell-v26';
+const CACHE_NAME = 'giro360-shell-v27';
+const APP_BASE = new URL('./', self.registration.scope);
 const APP_SHELL = [
-  '/',
-  '/index.html',
-  '/fontes.html',
-  '/styles.css?v=20261012-25',
-  '/app.js?v=20261012-25',
-  '/manifest.webmanifest',
-  '/icon.svg',
+  new URL('index.html', APP_BASE).href,
+  new URL('fontes.html', APP_BASE).href,
+  new URL('styles.css?v=20261012-26', APP_BASE).href,
+  new URL('app.js?v=20261012-26', APP_BASE).href,
+  new URL('manifest.webmanifest', APP_BASE).href,
+  new URL('icon.svg', APP_BASE).href,
 ];
 
 self.addEventListener('install', (event) => {
@@ -36,7 +36,7 @@ self.addEventListener('fetch', (event) => {
   if (
     event.request.method !== 'GET' ||
     requestUrl.origin !== self.location.origin ||
-    requestUrl.pathname.startsWith('/api/')
+    requestUrl.pathname.includes('/api/')
   ) {
     return;
   }
@@ -46,14 +46,15 @@ self.addEventListener('fetch', (event) => {
       .then((response) => {
         if (response.ok) {
           const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          const cacheKey = new Request(event.request.url, { method: 'GET' });
+          caches.open(CACHE_NAME).then((cache) => cache.put(cacheKey, copy));
         }
         return response;
       })
       .catch(async () => {
         const cached = await caches.match(event.request);
         if (cached) return cached;
-        return caches.match('/index.html');
+        return caches.match(new URL('index.html', APP_BASE).href);
       }),
   );
 });
@@ -68,9 +69,9 @@ self.addEventListener('push', (event) => {
 
   const options = {
     body: payload.body || 'Uma nova notícia foi encontrada.',
-    icon: '/icon.svg',
-    badge: '/icon.svg',
-    data: { url: payload.url || '/' },
+    icon: new URL('icon.svg', APP_BASE).href,
+    badge: new URL('icon.svg', APP_BASE).href,
+    data: { url: payload.url || APP_BASE.href },
     renotify: false,
     tag: payload.url || 'giro360-news',
   };
@@ -86,15 +87,15 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  let destination = new URL('/', self.location.origin);
+  let destination = new URL('index.html', APP_BASE);
   try {
     const requested = new URL(
-      event.notification.data?.url || '/',
-      self.location.origin,
+      event.notification.data?.url || APP_BASE.href,
+      APP_BASE,
     );
     if (requested.origin === self.location.origin) destination = requested;
   } catch {
-    destination = new URL('/', self.location.origin);
+    destination = new URL('index.html', APP_BASE);
   }
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(

@@ -105,6 +105,8 @@ let activeVideoIndex = 0;
 let videoSwipeStartY = null;
 let renderedVideoSignature = '';
 let activeArticlePreviewRequest = 0;
+let staticSnapshotMode = false;
+let newsRefreshIntervalMs = POLL_INTERVAL_MS;
 const reservedInstagramPaths = new Set([
   'about',
   'accounts',
@@ -602,21 +604,53 @@ function renderSyncStatus(data, error = '') {
   const checkedFeeds = (data.feeds || []).filter((feed) => !feed.error).length;
   const totalFeeds = (data.feeds || []).length;
   const errors = (data.feeds || []).filter((feed) => feed.error).length;
-  const updatedAt = data.updatedAt
+  const updatedAt = (staticSnapshotMode ? data.generatedAt : data.updatedAt)
     ? new Intl.DateTimeFormat('pt-BR', {
         hour: '2-digit',
         minute: '2-digit',
-      }).format(new Date(data.updatedAt))
+      }).format(new Date(staticSnapshotMode ? data.generatedAt : data.updatedAt))
     : 'aguardando';
 
-  status.textContent = `${checkedFeeds}/${totalFeeds} portais consultados · última verificação ${updatedAt}${errors ? ` · ${errors} fonte(s) indisponível(is)` : ''} · atualização a cada minuto`;
+  status.textContent = staticSnapshotMode
+    ? `${checkedFeeds}/${totalFeeds} portais consultados · snapshot do GitHub atualizado ${updatedAt} · publicação automática a cada 15 minutos`
+    : `${checkedFeeds}/${totalFeeds} portais consultados · última verificação ${updatedAt}${errors ? ` · ${errors} fonte(s) indisponível(is)` : ''} · atualização a cada minuto`;
   status.classList.toggle('sync-error', checkedFeeds === 0);
 }
 
-async function refreshNews() {
-  const response = await fetch('/api/news', { cache: 'no-store' });
-  if (!response.ok) throw apiResponseError(response);
+async function fetchStaticNewsData() {
+  const dataUrl = new URL('news-data.json', document.baseURI);
+  const response = await fetch(dataUrl, { cache: 'no-store' });
+  if (!response.ok) throw new Error(`snapshot respondeu ${response.status}`);
   const data = await response.json();
+  if (!Array.isArray(data.news) || !Array.isArray(data.feeds)) {
+    throw new Error('snapshot de notícias inválido');
+  }
+  return data;
+}
+
+async function refreshNews() {
+  let data;
+  try {
+    const response = await fetch('/api/news', { cache: 'no-store' });
+    if (!response.ok) {
+      if (response.status !== 404) throw new Error(`servidor respondeu ${response.status}`);
+      data = await fetchStaticNewsData();
+      staticSnapshotMode = true;
+      newsRefreshIntervalMs =
+        data.pollingIntervalMs || 15 * 60 * 1000;
+    } else {
+      data = await response.json();
+      staticSnapshotMode = Boolean(data.staticSnapshot);
+      newsRefreshIntervalMs = staticSnapshotMode
+        ? data.pollingIntervalMs || 15 * 60 * 1000
+        : POLL_INTERVAL_MS;
+    }
+  } catch (error) {
+    if (!staticSnapshotMode && !(error instanceof TypeError)) throw error;
+    data = await fetchStaticNewsData();
+    staticSnapshotMode = true;
+    newsRefreshIntervalMs = data.pollingIntervalMs || 15 * 60 * 1000;
+  }
   if (!Array.isArray(data.news)) throw new Error('resposta inválida do servidor');
 
   const selectedPortal =
@@ -649,12 +683,14 @@ function renderSources() {
       const state = source.error
         ? `Falha: ${source.error}`
         : source.lastCheckedAt
-          ? 'Monitorando'
+          ? staticSnapshotMode
+            ? 'Incluído no snapshot periódico'
+            : 'Monitorando'
           : 'Aguardando primeira consulta';
       return `
         <li class="source-item">
           <div class="label">
-            <span class="kind">${escapeHtml(source.region)} · RSS monitorado</span>
+            <span class="kind">${escapeHtml(source.region)} · ${staticSnapshotMode ? 'RSS no GitHub Pages' : 'RSS monitorado'}</span>
             ${sourceUrl ? `<a class="value source-link" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(source.name)}</a>` : `<span class="value">${escapeHtml(source.name)}</span>`}
             ${source.custom ? `<small class="kind">Feed: ${escapeHtml(source.url)}</small>` : ''}
           </div>
@@ -691,9 +727,20 @@ function renderSources() {
 
 async function refreshSources() {
   const response = await fetch('/api/sources', { cache: 'no-store' });
-  if (!response.ok) throw apiResponseError(response);
-  const data = await response.json();
+  let data;
+  if (!response.ok) {
+    if (response.status !== 404) throw new Error(`servidor respondeu ${response.status}`);
+    data = await fetchStaticNewsData();
+    staticSnapshotMode = true;
+    newsRefreshIntervalMs =
+      data.pollingIntervalMs || 15 * 60 * 1000;
+  } else {
+    data = await response.json();
+  }
   feedSources = Array.isArray(data.sources) ? data.sources : [];
+  if (!feedSources.length && Array.isArray(data.feeds)) {
+    feedSources = data.feeds;
+  }
   renderSources();
 }
 
@@ -709,7 +756,7 @@ function isConnectionError(error) {
 function apiResponseError(response) {
   if (response.status === 404) {
     return new Error(
-      'A API do GIRO 360 não existe neste endereço. GitHub Pages hospeda apenas os arquivos da interface e não executa o servidor Node. Publique o projeto como serviço Node (por exemplo, usando render.yaml no Render) e abra o endereço desse serviço.',
+      'Esta função exige o servidor GIRO 360. No GitHub Pages, o site usa notícias pré-atualizadas automaticamente; para cadastrar fontes ou ativar notificações, use o servidor Node.',
     );
   }
   return new Error(`servidor respondeu ${response.status}`);
@@ -757,6 +804,10 @@ function renderPushState(message) {
 
 async function enablePushNotifications() {
   const status = document.getElementById('pushStatus');
+  if (staticSnapshotMode) {
+    renderPushState('Notificações push exigem o servidor Node; o GitHub Pages publica apenas o snapshot das notícias.');
+    return;
+  }
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
     renderPushState('Este navegador não oferece notificações push.');
     return;
@@ -789,7 +840,9 @@ async function enablePushNotifications() {
     return;
   }
 
-  const registration = await navigator.serviceWorker.register('/service-worker.js');
+  const registration = await navigator.serviceWorker.register('./service-worker.js', {
+    scope: './',
+  });
   const subscription = await registration.pushManager.subscribe({
     userVisibleOnly: true,
     applicationServerKey: urlBase64ToUint8Array(keyData.publicKey),
@@ -811,7 +864,7 @@ async function enablePushNotifications() {
 }
 
 async function disablePushNotifications() {
-  const registration = await navigator.serviceWorker.getRegistration('/');
+  const registration = await navigator.serviceWorker.getRegistration();
   const subscription = await registration?.pushManager.getSubscription();
   if (subscription) {
     const response = await fetch('/api/push/subscribe', {
@@ -989,10 +1042,10 @@ function attachEventHandlers() {
             })),
           }),
         });
-        const data = await response.json();
         if (!response.ok) {
-          throw new Error(data.error || `servidor respondeu ${response.status}`);
+          throw apiResponseError(response);
         }
+        const data = await response.json();
         data.results.forEach((result, index) => {
           if (result.added) added.push(result);
           else if (result.duplicate) duplicates.push(serverSources[index].original);
@@ -1114,10 +1167,9 @@ function attachEventHandlers() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: removeMonitoredButton.dataset.removeMonitoredSource }),
       })
-        .then(async (response) => {
-          const data = await response.json();
-          if (!response.ok) throw new Error(data.error || 'Não foi possível excluir a fonte.');
-          await refreshSources();
+      .then(async (response) => {
+        if (!response.ok) throw apiResponseError(response);
+        await refreshSources();
           await refreshNews();
         })
         .catch((error) => {
@@ -1180,6 +1232,11 @@ function openStory(story) {
 }
 
 async function loadArticlePreview(story, content, requestId) {
+  if (staticSnapshotMode) {
+    throw new Error(
+      'A prévia do portal exige o servidor Node; no GitHub Pages estático, só o texto publicado no RSS está disponível.',
+    );
+  }
   const articleUrl = safeHttpUrl(story.url);
   if (!articleUrl) throw new Error('O endereço desta matéria é inválido.');
 
@@ -1217,7 +1274,7 @@ async function init() {
 
   try {
     if ('serviceWorker' in navigator) {
-      await navigator.serviceWorker.register('/service-worker.js', { scope: '/' });
+      await navigator.serviceWorker.register('./service-worker.js', { scope: './' });
     }
   } catch (error) {
     console.error('Service worker registration failed:', error);
@@ -1238,12 +1295,19 @@ async function init() {
     if (story) openStory(story);
   }
 
-  setInterval(() => {
-    refreshNews().catch((error) => {
-      console.error('Automatic news refresh failed:', error);
-      renderSyncStatus(null, error.message);
-    });
-  }, POLL_INTERVAL_MS);
+  const scheduleNewsRefresh = () => {
+    setTimeout(async () => {
+      try {
+        await refreshNews();
+      } catch (error) {
+        console.error('Automatic news refresh failed:', error);
+        renderSyncStatus(null, error.message);
+      } finally {
+        scheduleNewsRefresh();
+      }
+    }, newsRefreshIntervalMs);
+  };
+  scheduleNewsRefresh();
 }
 
 document.addEventListener('DOMContentLoaded', init);

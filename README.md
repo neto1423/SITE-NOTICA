@@ -70,28 +70,34 @@ A primeira inicialização gera e guarda as chaves
 VAPID e as assinaturas Web Push na pasta `data/`, que não deve ser publicada ou
 versionada.
 
-## Publicar
+## Publicar no GitHub Pages
 
-O GitHub Pages não executa Node.js e, por isso, não consegue atender às rotas
-`/api/news`, `/api/sources` ou às demais APIs do GIRO 360. Publicar somente os
-arquivos estáticos do repositório causa erro 404 e deixa a lista de notícias
-vazia.
+O GitHub Pages não executa Node.js. O workflow
+`.github/workflows/deploy-pages.yml` contorna essa limitação: em cada envio para
+`main`/`master` e a cada 15 minutos, o GitHub Actions instala as dependências,
+consulta os feeds públicos usando o servidor Node durante a compilação, gera
+`news-data.json` e publica a interface e as notícias como arquivos estáticos.
+O navegador carrega esse snapshot quando a API Node não está disponível.
 
-Este repositório inclui `render.yaml` para publicar a aplicação completa como
-serviço Node no Render:
+Para ativar:
 
-1. Envie as alterações para o GitHub.
-2. No Render, crie um **Blueprint** e conecte este repositório. O Render lerá
-   `render.yaml`, instalará as dependências e iniciará `npm start`.
-3. Aguarde a verificação `/api/news` passar e acesse a URL `*.onrender.com`
-   fornecida pelo Render — não a URL `*.github.io`.
-4. Se usar um domínio próprio, aponte-o para o serviço do Render.
+1. Envie estes arquivos para o repositório GitHub, incluindo o workflow.
+2. No GitHub, abra **Settings → Pages** e selecione **GitHub Actions** como
+   origem de publicação.
+3. Abra **Actions**, execute **Atualizar notícias e publicar no GitHub Pages**
+   manualmente uma vez e aguarde o workflow terminar.
+4. Acesse o endereço publicado em **Settings → Pages**. O workflow também será
+   executado automaticamente em atualizações do código e, normalmente, a cada
+   15 minutos. O GitHub pode atrasar execuções agendadas.
 
-O plano gratuito do Render usa armazenamento efêmero: fontes personalizadas,
-chaves Web Push e assinaturas em `data/` podem ser perdidas quando o serviço
-reiniciar. Para preservar esses dados, configure armazenamento persistente no
-provedor ou faça backup deles fora do deploy; nunca envie segredos ou a pasta
-`data/` ao GitHub.
+No modo GitHub Pages as notícias são um snapshot periódico, não uma transmissão
+em tempo real. Cadastro de feeds personalizados no servidor, prévias obtidas
+diretamente nas páginas dos portais, varredura de vídeos em segundo plano e
+notificações Web Push exigem um serviço Node permanentemente ativo; esses
+recursos não são fornecidos pelo Pages. Links e fontes sociais salvos
+localmente continuam no navegador. Para esses recursos avançados, o projeto
+mantém `render.yaml` como uma opção de hospedagem Node. Nunca publique segredos
+nem a pasta `data/` no GitHub.
 
 ## Instalar e ativar alertas no iPhone
 
