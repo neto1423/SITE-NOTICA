@@ -1,10 +1,10 @@
-const CACHE_NAME = 'giro360-shell-v25';
+const CACHE_NAME = 'giro360-shell-v26';
 const APP_SHELL = [
   '/',
   '/index.html',
   '/fontes.html',
-  '/styles.css?v=20261012-24',
-  '/app.js?v=20261012-24',
+  '/styles.css?v=20261012-25',
+  '/app.js?v=20261012-25',
   '/manifest.webmanifest',
   '/icon.svg',
 ];

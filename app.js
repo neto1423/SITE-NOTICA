@@ -615,7 +615,7 @@ function renderSyncStatus(data, error = '') {
 
 async function refreshNews() {
   const response = await fetch('/api/news', { cache: 'no-store' });
-  if (!response.ok) throw new Error(`servidor respondeu ${response.status}`);
+  if (!response.ok) throw apiResponseError(response);
   const data = await response.json();
   if (!Array.isArray(data.news)) throw new Error('resposta inválida do servidor');
 
@@ -691,7 +691,7 @@ function renderSources() {
 
 async function refreshSources() {
   const response = await fetch('/api/sources', { cache: 'no-store' });
-  if (!response.ok) throw new Error(`servidor respondeu ${response.status}`);
+  if (!response.ok) throw apiResponseError(response);
   const data = await response.json();
   feedSources = Array.isArray(data.sources) ? data.sources : [];
   renderSources();
@@ -704,6 +704,15 @@ function isConnectionError(error) {
       error.message,
     )
   );
+}
+
+function apiResponseError(response) {
+  if (response.status === 404) {
+    return new Error(
+      'A API do GIRO 360 não existe neste endereço. GitHub Pages hospeda apenas os arquivos da interface e não executa o servidor Node. Publique o projeto como serviço Node (por exemplo, usando render.yaml no Render) e abra o endereço desse serviço.',
+    );
+  }
+  return new Error(`servidor respondeu ${response.status}`);
 }
 
 function toggleNotificationPanel(forceOpen) {

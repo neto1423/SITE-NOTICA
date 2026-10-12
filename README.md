@@ -70,6 +70,29 @@ A primeira inicialização gera e guarda as chaves
 VAPID e as assinaturas Web Push na pasta `data/`, que não deve ser publicada ou
 versionada.
 
+## Publicar
+
+O GitHub Pages não executa Node.js e, por isso, não consegue atender às rotas
+`/api/news`, `/api/sources` ou às demais APIs do GIRO 360. Publicar somente os
+arquivos estáticos do repositório causa erro 404 e deixa a lista de notícias
+vazia.
+
+Este repositório inclui `render.yaml` para publicar a aplicação completa como
+serviço Node no Render:
+
+1. Envie as alterações para o GitHub.
+2. No Render, crie um **Blueprint** e conecte este repositório. O Render lerá
+   `render.yaml`, instalará as dependências e iniciará `npm start`.
+3. Aguarde a verificação `/api/news` passar e acesse a URL `*.onrender.com`
+   fornecida pelo Render — não a URL `*.github.io`.
+4. Se usar um domínio próprio, aponte-o para o serviço do Render.
+
+O plano gratuito do Render usa armazenamento efêmero: fontes personalizadas,
+chaves Web Push e assinaturas em `data/` podem ser perdidas quando o serviço
+reiniciar. Para preservar esses dados, configure armazenamento persistente no
+provedor ou faça backup deles fora do deploy; nunca envie segredos ou a pasta
+`data/` ao GitHub.
+
 ## Instalar e ativar alertas no iPhone
 
 1. Publique o app em uma hospedagem HTTPS com Node.js, mantendo a pasta `data/`
