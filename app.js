@@ -1,5 +1,32 @@
 const REFRESH_INTERVAL = 60_000;
 const APP_BASE_URL = new URL("./", document.currentScript.src);
+const CARD_TEMPLATE_KEY = "giro360-instagram-card-template-v1";
+const CARD_DIMENSIONS = {
+  feed: { width: 1080, height: 1350 },
+  story: { width: 1080, height: 1920 }
+};
+const DEFAULT_CARD_TEMPLATE = {
+  format: "feed",
+  background: "#102447",
+  textColor: "#ffffff",
+  alignment: "center",
+  titleSize: 68,
+  imageHeight: 40,
+  profile: "",
+  imageX: 0.06,
+  imageY: 0.035,
+  titleX: 0.5,
+  titleY: 0.47,
+  summaryX: 0.5,
+  summaryY: 0.74,
+  logoX: 0.08,
+  logoY: 0.91,
+  signatureX: 0.5,
+  signatureY: 0.91,
+  logoData: "",
+  assets: [],
+  layerOrder: ["image", "title", "summary", "logo", "signature"]
+};
 const ZONA_DA_MATA_TERMS = [
   "zona da mata", "murici", "união dos palmares", "uniao dos palmares", "branquinha",
   "santana do mundaú", "santana do mundau", "são josé da laje", "sao jose da laje",
@@ -14,7 +41,14 @@ const state = {
   hasLoadedData: false,
   loading: false,
   installedPrompt: null,
-  readerReturnFocus: null
+  readerReturnFocus: null,
+  cardArticle: null,
+  cardTemplate: { ...DEFAULT_CARD_TEMPLATE },
+  cardImageOverride: "",
+  cardLogo: null,
+  cardSelectedLayer: "image",
+  cardDrag: null,
+  cardRenderVersion: 0
 };
 
 const elements = {
@@ -41,7 +75,25 @@ const elements = {
   readerTime: document.querySelector("#reader-time"),
   readerBody: document.querySelector("#reader-body"),
   readerOriginal: document.querySelector("#reader-original"),
-  readerShare: document.querySelector("#reader-share-whatsapp")
+  readerShare: document.querySelector("#reader-share-whatsapp"),
+  cardStudio: document.querySelector("#card-studio"),
+  cardSearch: document.querySelector("#card-news-search"),
+  cardResults: document.querySelector("#card-news-results"),
+  cardCanvas: document.querySelector("#card-preview"),
+  cardBackground: document.querySelector("#card-background"),
+  cardTextColor: document.querySelector("#card-text-color"),
+  cardAlignment: document.querySelector("#card-alignment"),
+  cardTitleSize: document.querySelector("#card-title-size"),
+  cardImageHeight: document.querySelector("#card-image-height"),
+  cardProfile: document.querySelector("#card-profile"),
+  cardLogoUpload: document.querySelector("#card-logo-upload"),
+  cardElementUpload: document.querySelector("#card-element-upload"),
+  cardImageUpload: document.querySelector("#card-image-upload"),
+  cardLayers: document.querySelector("#card-layer-list"),
+  cardSave: document.querySelector("#card-save-template"),
+  cardReset: document.querySelector("#card-reset-template"),
+  cardDownload: document.querySelector("#card-download"),
+  cardStatus: document.querySelector("#card-studio-status")
 };
 
 function normalizeText(value = "") {
@@ -108,6 +160,13 @@ function imageUrlFor(article) {
   return youtubeId ? `https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg` : "";
 }
 
+function cardImageUrlFor(article) {
+  if (/^data\/card-images\/[a-f0-9]{64}\.(?:jpg|png|webp)$/i.test(article.cardImage || "")) {
+    return new URL(article.cardImage, APP_BASE_URL).href;
+  }
+  return imageUrlFor(article);
+}
+
 function whatsappShareUrl(article) {
   const title = article.title.trim();
   const summary = (article.shareSummary || article.description || "").trim().slice(0, 500);
@@ -120,6 +179,541 @@ function whatsappShareUrl(article) {
     image ? `\nImagem: ${image}` : ""
   ].filter(Boolean);
   return `https://wa.me/?text=${encodeURIComponent(lines.join("\n"))}`;
+}
+
+function setCardStatus(message, isError = false) {
+  elements.cardStatus.textContent = message;
+  elements.cardStatus.dataset.error = String(isError);
+}
+
+function renderCardNewsResults() {
+  if (!state.articles.length) {
+    elements.cardResults.innerHTML = "<p>As notícias ainda estão carregando. Tente novamente em instantes.</p>";
+    return;
+  }
+  const query = normalizeText(elements.cardSearch.value.trim());
+  const matches = state.articles
+    .filter((article) => !query || normalizeText(`${article.title} ${article.description} ${article.source}`).includes(query))
+    .slice(0, 12);
+  if (!matches.length) {
+    elements.cardResults.innerHTML = "<p>Nenhuma notícia encontrada. Experimente outro termo.</p>";
+    return;
+  }
+  elements.cardResults.innerHTML = matches.map((article, index) => `
+    <button class="card-news-option${state.cardArticle?.link === article.link ? " is-selected" : ""}" type="button" data-card-article="${index}">
+      <strong>${escapeHtml(article.title)}</strong>
+      <span>${escapeHtml(article.source)} · ${escapeHtml(categoryFor(article))}</span>
+    </button>
+  `).join("");
+}
+
+function wrapCanvasText(context, text, maxWidth, maxLines) {
+  const words = String(text || "").trim().split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = "";
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word;
+    if (line && context.measureText(candidate).width > maxWidth) {
+      lines.push(line);
+      line = word;
+      if (lines.length === maxLines) break;
+    } else {
+      line = candidate;
+    }
+  }
+  if (line && lines.length < maxLines) lines.push(line);
+  if (lines.length === maxLines && words.join(" ").length > lines.join(" ").length) {
+    let lastLine = lines[maxLines - 1];
+    while (lastLine && context.measureText(`${lastLine}…`).width > maxWidth) lastLine = lastLine.slice(0, -1);
+    lines[maxLines - 1] = `${lastLine.trimEnd()}…`;
+  }
+  return lines;
+}
+
+function drawCardImageCover(context, image, x, y, width, height) {
+  const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight);
+  const drawWidth = image.naturalWidth * scale;
+  const drawHeight = image.naturalHeight * scale;
+  context.save();
+  context.beginPath();
+  context.roundRect(x, y, width, height, 24);
+  context.clip();
+  context.drawImage(image, x + (width - drawWidth) / 2, y + (height - drawHeight) / 2, drawWidth, drawHeight);
+  context.restore();
+}
+
+function cardTextAnchor(context, width, normalizedX) {
+  const alignment = state.cardTemplate.alignment;
+  if (alignment === "left") return { textAlign: "left", x: width * normalizedX };
+  if (alignment === "right") return { textAlign: "right", x: width * normalizedX };
+  return { textAlign: "center", x: width * normalizedX };
+}
+
+function cardLayerOrder() {
+  const available = ["image", "title", "summary", "logo", ...(state.cardTemplate.assets || []).map((asset) => `asset:${asset.id}`), "signature"];
+  const savedOrder = Array.isArray(state.cardTemplate.layerOrder) ? state.cardTemplate.layerOrder : [];
+  return [...savedOrder.filter((layer, index) => available.includes(layer) && savedOrder.indexOf(layer) === index), ...available.filter((layer) => !savedOrder.includes(layer))];
+}
+
+function cardLayerLabel(layer) {
+  if (layer === "image") return "Foto da notícia";
+  if (layer === "title") return "Título";
+  if (layer === "summary") return "Resumo";
+  if (layer === "logo") return "Logo da marca";
+  if (layer === "signature") return "Fonte e assinatura";
+  const asset = state.cardTemplate.assets.find((item) => `asset:${item.id}` === layer);
+  return asset ? asset.name : "Elemento enviado";
+}
+
+function renderCardLayers() {
+  const order = cardLayerOrder();
+  elements.cardLayers.innerHTML = order.map((layer, index) => `
+    <li class="card-layer-row${layer === state.cardSelectedLayer ? " is-selected" : ""}">
+      <button class="card-layer-select" type="button" data-card-layer="${escapeHtml(layer)}" aria-pressed="${layer === state.cardSelectedLayer}">
+        <span>${escapeHtml(cardLayerLabel(layer))}</span><small>${index === 0 ? "Mais atrás" : index === order.length - 1 ? "Mais à frente" : `Camada ${index + 1}`}</small>
+      </button>
+      <button class="card-layer-move" type="button" data-card-layer-move="-1" data-card-layer="${escapeHtml(layer)}" aria-label="Enviar ${escapeHtml(cardLayerLabel(layer))} para trás" ${index === 0 ? "disabled" : ""}>↓</button>
+      <button class="card-layer-move" type="button" data-card-layer-move="1" data-card-layer="${escapeHtml(layer)}" aria-label="Trazer ${escapeHtml(cardLayerLabel(layer))} para frente" ${index === order.length - 1 ? "disabled" : ""}>↑</button>
+      ${layer.startsWith("asset:") ? `<button class="card-layer-remove" type="button" data-card-layer-remove="${escapeHtml(layer.slice(6))}" aria-label="Remover ${escapeHtml(cardLayerLabel(layer))}">×</button>` : ""}
+    </li>
+  `).join("");
+}
+
+function loadCardImage(source) {
+  if (!source) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const image = new Image();
+    if (!source.startsWith("data:")) image.crossOrigin = "anonymous";
+    image.onload = () => resolve(image);
+    image.onerror = () => resolve(null);
+    image.src = source;
+  });
+}
+
+async function renderCardPreview() {
+  const template = state.cardTemplate;
+  const { width, height } = CARD_DIMENSIONS[template.format];
+  const canvas = elements.cardCanvas;
+  canvas.width = width;
+  canvas.height = height;
+  const version = ++state.cardRenderVersion;
+  const article = state.cardArticle;
+  const imageSource = state.cardImageOverride || (article ? cardImageUrlFor(article) : "");
+  const assets = template.assets || [];
+  const [photo, logo, ...assetImages] = await Promise.all([
+    loadCardImage(imageSource),
+    loadCardImage(template.logoData),
+    ...assets.map((asset) => loadCardImage(asset.data))
+  ]);
+  if (version !== state.cardRenderVersion) return;
+  const images = new Map(assets.map((asset, index) => [`asset:${asset.id}`, assetImages[index]]));
+  const context = canvas.getContext("2d");
+  context.clearRect(0, 0, width, height);
+  context.fillStyle = template.background;
+  context.fillRect(0, 0, width, height);
+  context.fillStyle = "#4b83ff";
+  context.fillRect(0, 0, width, 16);
+
+  const textColor = template.textColor;
+  const textWidth = width * 0.84;
+  const title = article?.title || "Título da notícia selecionada";
+  const titleFont = Number(template.titleSize);
+  const titleAnchor = cardTextAnchor(context, width, template.titleX);
+  const fullDescription = (article?.shareSummary || article?.description || "Resumo da notícia será exibido aqui.").trim();
+  const description = fullDescription.length > 180 ? `${fullDescription.slice(0, 177).trimEnd()}…` : fullDescription;
+  const summaryFont = Math.max(28, Math.round(titleFont * 0.49));
+  const summaryAnchor = cardTextAnchor(context, width, template.summaryX);
+  const signatureAnchor = cardTextAnchor(context, width, template.signatureX);
+  const signature = [article?.source || "Fonte da notícia", template.profile.trim()].filter(Boolean).join("  ·  ");
+  for (const layer of cardLayerOrder()) {
+    if (layer === "image") {
+      const imageX = width * template.imageX;
+      const imageY = height * template.imageY;
+      const imageWidth = width * 0.88;
+      const imageHeight = height * template.imageHeight / 100;
+      context.fillStyle = "#253a5b";
+      context.beginPath();
+      context.roundRect(imageX, imageY, imageWidth, imageHeight, 24);
+      context.fill();
+      if (photo) {
+        drawCardImageCover(context, photo, imageX, imageY, imageWidth, imageHeight);
+      } else {
+        context.fillStyle = "#dbe7ff";
+        context.font = "600 30px Arial, sans-serif";
+        context.textAlign = "center";
+        context.fillText(imageSource ? "Não foi possível carregar a foto" : "A foto da notícia aparecerá aqui", width / 2, imageY + imageHeight / 2);
+      }
+    } else if (layer === "title") {
+      context.fillStyle = textColor;
+      context.textAlign = titleAnchor.textAlign;
+      context.font = `800 ${titleFont}px Arial, sans-serif`;
+      const titleLines = wrapCanvasText(context, title, textWidth, template.format === "story" ? 4 : 3);
+      const titleLineHeight = titleFont * 1.18;
+      titleLines.forEach((line, index) => context.fillText(line, titleAnchor.x, height * template.titleY + titleFont + index * titleLineHeight, textWidth));
+    } else if (layer === "summary") {
+      context.fillStyle = textColor;
+      context.globalAlpha = 0.88;
+      context.textAlign = summaryAnchor.textAlign;
+      context.font = `400 ${summaryFont}px Arial, sans-serif`;
+      const summaryLines = wrapCanvasText(context, description, textWidth, 5);
+      const summaryLineHeight = summaryFont * 1.4;
+      const summaryTop = height * template.summaryY;
+      summaryLines.forEach((line, index) => context.fillText(line, summaryAnchor.x, summaryTop + summaryFont + index * summaryLineHeight, textWidth));
+      context.globalAlpha = 1;
+    } else if (layer === "logo") {
+      const logoX = width * template.logoX;
+      const logoY = height * template.logoY;
+      if (logo) {
+        const scale = Math.min((width * 0.18) / logo.naturalWidth, (height * 0.08) / logo.naturalHeight, 1);
+        context.drawImage(logo, logoX, logoY, logo.naturalWidth * scale, logo.naturalHeight * scale);
+      } else {
+        context.fillStyle = textColor;
+        context.globalAlpha = 0.82;
+        context.font = "800 25px Arial, sans-serif";
+        context.textAlign = "left";
+        context.fillText("GIRO 360", logoX, logoY + 28);
+        context.globalAlpha = 1;
+      }
+    } else if (layer === "signature") {
+      context.fillStyle = textColor;
+      context.globalAlpha = 0.8;
+      context.font = "600 24px Arial, sans-serif";
+      context.textAlign = signatureAnchor.textAlign;
+      context.fillText(signature, signatureAnchor.x, height * template.signatureY + 24, textWidth);
+      context.globalAlpha = 1;
+    } else {
+      const asset = assets.find((item) => `asset:${item.id}` === layer);
+      const image = images.get(layer);
+      if (!asset || !image) continue;
+      const assetWidth = width * asset.width;
+      const assetHeight = assetWidth * image.naturalHeight / image.naturalWidth;
+      context.drawImage(image, width * asset.x, height * asset.y, assetWidth, assetHeight);
+    }
+  }
+
+  elements.cardDownload.disabled = !article;
+  if (!article) {
+    setCardStatus("Selecione uma notícia. Arraste os elementos para ajustar o layout.");
+  } else if (imageSource && !photo) {
+    setCardStatus("A foto da fonte não pode ser carregada aqui. Envie uma foto personalizada para incluí-la no PNG.", true);
+  } else {
+    setCardStatus("Prévia pronta. Arraste os elementos, salve o layout e baixe o PNG.");
+  }
+}
+
+async function updateCardTemplateFromControls() {
+  state.cardTemplate.background = elements.cardBackground.value;
+  state.cardTemplate.textColor = elements.cardTextColor.value;
+  state.cardTemplate.alignment = elements.cardAlignment.value;
+  state.cardTemplate.titleSize = Number(elements.cardTitleSize.value);
+  state.cardTemplate.imageHeight = Number(elements.cardImageHeight.value);
+  state.cardTemplate.profile = elements.cardProfile.value;
+  await renderCardPreview();
+  setCardStatus("Layout alterado. Salve-o para reutilizar nos próximos cards.");
+}
+
+function applyCardTemplateToControls() {
+  const template = state.cardTemplate;
+  document.querySelector(`input[name="card-format"][value="${template.format}"]`).checked = true;
+  elements.cardBackground.value = template.background;
+  elements.cardTextColor.value = template.textColor;
+  elements.cardAlignment.value = template.alignment;
+  elements.cardTitleSize.value = template.titleSize;
+  elements.cardImageHeight.value = template.imageHeight;
+  elements.cardProfile.value = template.profile;
+  renderCardLayers();
+  renderCardPreview();
+}
+
+function loadSavedCardTemplate() {
+  try {
+    const saved = localStorage.getItem(CARD_TEMPLATE_KEY);
+    if (!saved) return;
+    const parsed = JSON.parse(saved);
+    state.cardTemplate = { ...DEFAULT_CARD_TEMPLATE, ...parsed };
+    if (!CARD_DIMENSIONS[state.cardTemplate.format]) state.cardTemplate.format = "feed";
+    state.cardTemplate.assets = Array.isArray(parsed.assets)
+      ? parsed.assets.filter((asset) => asset && typeof asset.id === "string" && typeof asset.data === "string").slice(0, 8)
+      : [];
+    state.cardTemplate.layerOrder = cardLayerOrder();
+  } catch (error) {
+    setCardStatus(`Não foi possível carregar o layout salvo: ${error.message}`, true);
+  }
+}
+
+function saveCardTemplate() {
+  try {
+    localStorage.setItem(CARD_TEMPLATE_KEY, JSON.stringify(state.cardTemplate));
+    setCardStatus("Layout, logo, elementos enviados e ordem das camadas salvos neste aparelho para os próximos cards.");
+  } catch (error) {
+    setCardStatus(`Não foi possível salvar. Reduza o tamanho das imagens enviadas e tente de novo. (${error.message})`, true);
+  }
+}
+
+function imageFileToDataUrl(file, maxSize) {
+  if (!file || !/^image\/(?:png|jpeg|webp)$/.test(file.type)) {
+    return Promise.reject(new Error("Escolha uma imagem PNG, JPEG ou WebP."));
+  }
+  if (file.size > 12 * 1024 * 1024) {
+    return Promise.reject(new Error("A imagem deve ter no máximo 12 MB."));
+  }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Não foi possível ler o arquivo selecionado."));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error("O arquivo selecionado não contém uma imagem válida."));
+      image.onload = () => {
+        const scale = Math.min(1, maxSize / Math.max(image.naturalWidth, image.naturalHeight));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+        canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL(file.type === "image/jpeg" ? "image/jpeg" : file.type, 0.84));
+      };
+      image.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function imageAspectRatio(source) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image.naturalHeight / image.naturalWidth);
+    image.onerror = () => reject(new Error("Não foi possível carregar o elemento enviado."));
+    image.src = source;
+  });
+}
+
+function cardCanvasLayerAt(x, y) {
+  const { width, height } = CARD_DIMENSIONS[state.cardTemplate.format];
+  const template = state.cardTemplate;
+  const contains = (left, top, boxWidth, boxHeight) => x >= left && x <= left + boxWidth && y >= top && y <= top + boxHeight;
+  for (const layer of cardLayerOrder().reverse()) {
+    if (layer === "image" && contains(width * template.imageX, height * template.imageY, width * 0.88, height * template.imageHeight / 100)) return layer;
+    if (layer === "title" && contains(width * (template.titleX - 0.44), height * template.titleY, width * 0.88, height * 0.17)) return layer;
+    if (layer === "summary" && contains(width * (template.summaryX - 0.44), height * template.summaryY, width * 0.88, height * 0.18)) return layer;
+    if (layer === "logo" && contains(width * template.logoX - 20, height * template.logoY - 20, width * 0.25, height * 0.1)) return layer;
+    if (layer === "signature" && contains(width * (template.signatureX - 0.44), height * template.signatureY - 20, width * 0.88, 60)) return layer;
+    if (layer.startsWith("asset:")) {
+      const asset = template.assets.find((item) => `asset:${item.id}` === layer);
+      if (asset) {
+        const assetWidth = width * asset.width;
+        const assetHeight = assetWidth * asset.aspect * width / height;
+        if (contains(width * asset.x, height * asset.y, assetWidth, assetHeight)) return layer;
+      }
+    }
+  }
+  return null;
+}
+
+function moveCardLayer(layer, direction) {
+  const order = cardLayerOrder();
+  const current = order.indexOf(layer);
+  const next = current + direction;
+  if (current < 0 || next < 0 || next >= order.length) return;
+  [order[current], order[next]] = [order[next], order[current]];
+  state.cardTemplate.layerOrder = order;
+  state.cardSelectedLayer = layer;
+  renderCardLayers();
+  renderCardPreview();
+  setCardStatus(`${cardLayerLabel(layer)} movido ${direction > 0 ? "para frente" : "para trás"}. Salve o layout para reutilizar esta ordem.`);
+}
+
+async function downloadCardImage() {
+  if (!state.cardArticle) {
+    setCardStatus("Selecione uma notícia antes de baixar o card.", true);
+    return;
+  }
+  elements.cardDownload.disabled = true;
+  setCardStatus("Gerando a imagem PNG…");
+  try {
+    await renderCardPreview();
+    const blob = await new Promise((resolve) => elements.cardCanvas.toBlob(resolve, "image/png"));
+    if (!blob) throw new Error("O navegador não conseguiu exportar a imagem. Envie uma foto personalizada e tente novamente.");
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    const slug = normalizeText(state.cardArticle.title).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || "noticia";
+    anchor.href = url;
+    anchor.download = `giro360-instagram-${state.cardTemplate.format}-${slug}.png`;
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    setCardStatus("PNG baixado. Agora você pode publicá-lo no Instagram.");
+  } catch (error) {
+    setCardStatus(`Falha ao gerar o PNG: ${error.message}`, true);
+  } finally {
+    elements.cardDownload.disabled = !state.cardArticle;
+  }
+}
+
+function setupCardStudio() {
+  loadSavedCardTemplate();
+  applyCardTemplateToControls();
+  renderCardNewsResults();
+  elements.cardSearch.addEventListener("input", renderCardNewsResults);
+  elements.cardResults.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-card-article]");
+    if (!button) return;
+    const matches = state.articles.filter((article) => {
+      const query = normalizeText(elements.cardSearch.value.trim());
+      return !query || normalizeText(`${article.title} ${article.description} ${article.source}`).includes(query);
+    }).slice(0, 12);
+    state.cardArticle = matches[Number(button.dataset.cardArticle)] || null;
+    state.cardImageOverride = "";
+    elements.cardImageUpload.value = "";
+    renderCardNewsResults();
+    renderCardPreview();
+  });
+  document.querySelectorAll('input[name="card-format"]').forEach((input) => input.addEventListener("change", () => {
+    state.cardTemplate.format = input.value;
+    applyCardTemplateToControls();
+    setCardStatus("Formato alterado. Salve o layout para usá-lo nos próximos cards.");
+  }));
+  [elements.cardBackground, elements.cardTextColor, elements.cardAlignment, elements.cardTitleSize, elements.cardImageHeight, elements.cardProfile]
+    .forEach((control) => control.addEventListener("input", updateCardTemplateFromControls));
+  elements.cardLogoUpload.addEventListener("change", async () => {
+    const file = elements.cardLogoUpload.files[0];
+    if (!file) return;
+    try {
+      state.cardTemplate.logoData = await imageFileToDataUrl(file, 700);
+      await renderCardPreview();
+      setCardStatus("Logo aplicado. Salve o layout para mantê-lo nos próximos cards.");
+    } catch (error) {
+      setCardStatus(error.message, true);
+    }
+  });
+  elements.cardElementUpload.addEventListener("change", async () => {
+    const files = [...elements.cardElementUpload.files];
+    if (!files.length) return;
+    try {
+      const remaining = 8 - state.cardTemplate.assets.length;
+      if (files.length > remaining) throw new Error(`Você pode salvar até 8 elementos de imagem. Há espaço para mais ${remaining}.`);
+      for (const file of files) {
+        const data = await imageFileToDataUrl(file, 900);
+        const aspect = await imageAspectRatio(data);
+        const id = window.crypto?.randomUUID ? window.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const asset = {
+          id,
+          name: file.name.replace(/\.[^.]+$/, "").slice(0, 40) || "Elemento",
+          data,
+          x: 0.38,
+          y: 0.82,
+          width: 0.24,
+          aspect
+        };
+        state.cardTemplate.assets.push(asset);
+        state.cardTemplate.layerOrder = [...cardLayerOrder().filter((layer) => layer !== `asset:${id}`), `asset:${id}`];
+        state.cardSelectedLayer = `asset:${id}`;
+      }
+      renderCardLayers();
+      await renderCardPreview();
+      setCardStatus("Elementos adicionados. Arraste-os no card, ajuste a ordem das camadas e salve o layout para reutilizá-los.");
+    } catch (error) {
+      setCardStatus(error.message, true);
+    } finally {
+      elements.cardElementUpload.value = "";
+    }
+  });
+  elements.cardImageUpload.addEventListener("change", async () => {
+    const file = elements.cardImageUpload.files[0];
+    if (!file) return;
+    try {
+      state.cardImageOverride = await imageFileToDataUrl(file, 1400);
+      await renderCardPreview();
+      setCardStatus("Foto personalizada aplicada apenas a este card. Para os próximos, selecione outra notícia ou envie outra foto.");
+    } catch (error) {
+      setCardStatus(error.message, true);
+    }
+  });
+  elements.cardSave.addEventListener("click", saveCardTemplate);
+  elements.cardReset.addEventListener("click", () => {
+    state.cardTemplate = { ...DEFAULT_CARD_TEMPLATE };
+    state.cardImageOverride = "";
+    state.cardSelectedLayer = "image";
+    try {
+      localStorage.removeItem(CARD_TEMPLATE_KEY);
+    } catch (error) {
+      setCardStatus(`Não foi possível remover o layout salvo: ${error.message}`, true);
+      return;
+    }
+    applyCardTemplateToControls();
+    elements.cardLogoUpload.value = "";
+    elements.cardElementUpload.value = "";
+    elements.cardImageUpload.value = "";
+    setCardStatus("Layout padrão restaurado. Salve-o se quiser mantê-lo para os próximos cards.");
+  });
+  elements.cardDownload.addEventListener("click", downloadCardImage);
+  elements.cardLayers.addEventListener("click", (event) => {
+    const moveButton = event.target.closest("[data-card-layer-move]");
+    if (moveButton) {
+      moveCardLayer(moveButton.dataset.cardLayer, Number(moveButton.dataset.cardLayerMove));
+      return;
+    }
+    const removeButton = event.target.closest("[data-card-layer-remove]");
+    if (removeButton) {
+      const layer = `asset:${removeButton.dataset.cardLayerRemove}`;
+      state.cardTemplate.assets = state.cardTemplate.assets.filter((asset) => `asset:${asset.id}` !== layer);
+      state.cardTemplate.layerOrder = cardLayerOrder().filter((item) => item !== layer);
+      if (state.cardSelectedLayer === layer) state.cardSelectedLayer = "image";
+      renderCardLayers();
+      renderCardPreview();
+      setCardStatus("Elemento removido. Salve o layout para registrar a alteração.");
+      return;
+    }
+    const selectButton = event.target.closest("[data-card-layer]");
+    if (selectButton) {
+      state.cardSelectedLayer = selectButton.dataset.cardLayer;
+      renderCardLayers();
+    }
+  });
+  elements.cardCanvas.addEventListener("pointerdown", (event) => {
+    const bounds = elements.cardCanvas.getBoundingClientRect();
+    const x = (event.clientX - bounds.left) * (elements.cardCanvas.width / bounds.width);
+    const y = (event.clientY - bounds.top) * (elements.cardCanvas.height / bounds.height);
+    const layer = cardCanvasLayerAt(x, y);
+    if (!layer) return;
+    state.cardSelectedLayer = layer;
+    renderCardLayers();
+    state.cardDrag = {
+      layer,
+      pointerId: event.pointerId,
+      startX: x,
+      startY: y,
+      template: { ...state.cardTemplate, assets: state.cardTemplate.assets.map((asset) => ({ ...asset })) }
+    };
+    elements.cardCanvas.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  });
+  elements.cardCanvas.addEventListener("pointermove", (event) => {
+    if (!state.cardDrag || state.cardDrag.pointerId !== event.pointerId) return;
+    const bounds = elements.cardCanvas.getBoundingClientRect();
+    const x = (event.clientX - bounds.left) * (elements.cardCanvas.width / bounds.width);
+    const y = (event.clientY - bounds.top) * (elements.cardCanvas.height / bounds.height);
+    const dx = (x - state.cardDrag.startX) / elements.cardCanvas.width;
+    const dy = (y - state.cardDrag.startY) / elements.cardCanvas.height;
+    const { layer, template } = state.cardDrag;
+    if (layer.startsWith("asset:")) {
+      const asset = state.cardTemplate.assets.find((item) => `asset:${item.id}` === layer);
+      const startingAsset = template.assets.find((item) => item.id === asset?.id);
+      if (!asset || !startingAsset) return;
+      asset.x = Math.min(0.98 - asset.width, Math.max(0.02, startingAsset.x + dx));
+      asset.y = Math.min(0.98 - asset.width * asset.aspect * elements.cardCanvas.width / elements.cardCanvas.height, Math.max(0.02, startingAsset.y + dy));
+    } else if (layer === "image" || layer === "logo") {
+      state.cardTemplate[`${layer}X`] = Math.min(0.9, Math.max(0.02, template[`${layer}X`] + dx));
+      state.cardTemplate[`${layer}Y`] = Math.min(0.94, Math.max(0.02, template[`${layer}Y`] + dy));
+    } else {
+      state.cardTemplate[`${layer}X`] = Math.min(0.94, Math.max(0.06, template[`${layer}X`] + dx));
+      state.cardTemplate[`${layer}Y`] = Math.min(0.94, Math.max(0.03, template[`${layer}Y`] + dy));
+    }
+    renderCardPreview();
+  });
+  const stopCardDrag = () => { state.cardDrag = null; };
+  elements.cardCanvas.addEventListener("pointerup", stopCardDrag);
+  elements.cardCanvas.addEventListener("pointercancel", stopCardDrag);
+  document.querySelector("#bottom-cards").addEventListener("click", () => {
+    elements.cardStudio.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
 }
 
 async function refreshNews() {
@@ -161,6 +755,7 @@ async function refreshNews() {
     if (previousIds.size) await notifyNewArticles(newArticles);
     state.articles = nextArticles;
     state.hasLoadedData = true;
+    renderCardNewsResults();
     const sourceUpdatedAt = snapshot.updatedAt ? formatTime(snapshot.updatedAt) : "ainda não publicados";
     elements.updated.textContent = `Conferido às ${formatTime(new Date())} · portais atualizados ${sourceUpdatedAt} · próxima checagem em 1 min`;
   } catch (error) {
@@ -400,6 +995,7 @@ document.querySelector("#bottom-alerts").addEventListener("click", () => {
   document.querySelector(".alert-card").scrollIntoView({ behavior: "smooth", block: "center" });
 });
 setupInstallPrompt();
+setupCardStudio();
 document.querySelector("#whatsapp-link").href = `https://wa.me/?text=${encodeURIComponent(`Confira o Giro 360, sua central de notícias: ${location.href}`)}`;
 elements.feed.addEventListener("click", (event) => {
   if (event.target.closest("a")) return;

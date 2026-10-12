@@ -1,11 +1,14 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outputPath = resolve(root, "data", "latest-news.json");
 const discoveredVideosPath = resolve(root, "data", "discovered-videos.json");
+const cardImagesPath = resolve(root, "data", "card-images");
 await mkdir(dirname(outputPath), { recursive: true });
+await mkdir(cardImagesPath, { recursive: true });
 
 const directFeeds = [
   { key: "alagoas", source: "TNH1", url: "https://www.tnh1.com.br/feed/" },
@@ -99,6 +102,24 @@ function decodeXml(value) {
   return decoded;
 }
 
+function repairMojibake(value) {
+  if (!/(?:Ã[\u0080-\u00ff]|Â[\u0080-\u00ff]|â€|ðŸ)/.test(value)) return value;
+  const windows1252Bytes = {
+    "€": 0x80, "‚": 0x82, "ƒ": 0x83, "„": 0x84, "…": 0x85, "†": 0x86, "‡": 0x87,
+    "ˆ": 0x88, "‰": 0x89, "Š": 0x8a, "‹": 0x8b, "Œ": 0x8c, "Ž": 0x8e, "‘": 0x91,
+    "’": 0x92, "“": 0x93, "”": 0x94, "•": 0x95, "–": 0x96, "—": 0x97, "˜": 0x98,
+    "™": 0x99, "š": 0x9a, "›": 0x9b, "œ": 0x9c, "ž": 0x9e, "Ÿ": 0x9f
+  };
+  try {
+    const bytes = Uint8Array.from(Array.from(value, (character) => (
+      windows1252Bytes[character] ?? character.codePointAt(0)
+    )));
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return value;
+  }
+}
+
 function decodeFeedResponse(response) {
   return response.arrayBuffer().then((buffer) => {
     const headerCharset = response.headers.get("content-type")?.match(/charset=["']?([^;"'\s]+)/i)?.[1];
@@ -117,7 +138,7 @@ function decodeFeedResponse(response) {
 }
 
 function cleanSummary(value, maxLength = 480) {
-  const summary = decodeXml(value)
+  const summary = repairMojibake(decodeXml(value))
     .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, " ")
     .replace(/<[^>]*>/g, " ")
     .replace(/\s+/g, " ")
@@ -180,9 +201,9 @@ function getVideoEmbed(value) {
 function parseFeed(xml, feed) {
   if (!xml.includes("<rss")) throw new Error("Resposta sem estrutura RSS.");
   return Array.from(xml.matchAll(/<item(?:\s[^>]*)?>([\s\S]*?)<\/item\s*>/gi), ([, item]) => {
-    const title = getTag(item, "title").replace(/<[^>]*>/g, "").trim();
+    const title = repairMojibake(getTag(item, "title").replace(/<[^>]*>/g, "").trim());
     const link = getTag(item, "link").trim();
-    const source = getTag(item, "source").replace(/<[^>]*>/g, "").trim();
+    const source = repairMojibake(getTag(item, "source").replace(/<[^>]*>/g, "").trim());
     const rawDescription = getTag(item, "description");
     const description = cleanSummary(rawDescription, 280);
     if (!title || !link || !/^https:\/\//i.test(link)) return null;
@@ -348,6 +369,53 @@ async function fetchFeed(feed) {
   return parseFeed(await decodeFeedResponse(response), feed);
 }
 
+async function downloadCardImages(articles) {
+  const selected = articles.filter((article) => /^https:\/\//i.test(article.image || "")).slice(0, 30);
+  let nextIndex = 0;
+  let downloaded = 0;
+  const retainedFiles = new Set();
+  await Promise.all(Array.from({ length: Math.min(4, selected.length) }, async () => {
+    while (nextIndex < selected.length) {
+      const article = selected[nextIndex++];
+      const hash = createHash("sha256").update(article.image).digest("hex");
+      try {
+        const response = await fetch(article.image, {
+          headers: { "User-Agent": "Mozilla/5.0 (compatible; Giro360News/1.0)", Accept: "image/avif,image/webp,image/png,image/jpeg" },
+          signal: AbortSignal.timeout(8_000)
+        });
+        if (!response.ok) {
+          console.warn(`Imagem indisponível para card de ${article.source}: HTTP ${response.status}`);
+          continue;
+        }
+        const contentType = response.headers.get("content-type")?.split(";")[0].trim().toLowerCase();
+        const extension = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" }[contentType];
+        const declaredLength = Number(response.headers.get("content-length") || 0);
+        if (!extension || declaredLength > 350_000) {
+          console.warn(`Imagem ignorada para card de ${article.source}: formato não suportado ou arquivo maior que 350 KB.`);
+          continue;
+        }
+        const image = Buffer.from(await response.arrayBuffer());
+        if (!image.length || image.length > 350_000) {
+          console.warn(`Imagem ignorada para card de ${article.source}: arquivo vazio ou maior que 350 KB.`);
+          continue;
+        }
+        const filename = `${hash}.${extension}`;
+        await writeFile(resolve(cardImagesPath, filename), image);
+        article.cardImage = `data/card-images/${filename}`;
+        retainedFiles.add(filename);
+        downloaded += 1;
+      } catch (error) {
+        console.warn(`Não foi possível preparar a imagem para card de ${article.source}: ${error.message}`);
+      }
+    }
+  }));
+  const existingFiles = await readdir(cardImagesPath);
+  await Promise.all(existingFiles
+    .filter((filename) => /^[a-f0-9]{64}\.(?:jpg|png|webp)$/i.test(filename) && !retainedFiles.has(filename))
+    .map((filename) => unlink(resolve(cardImagesPath, filename))));
+  console.log(`Imagens prontas para cards: ${downloaded}/${selected.length}.`);
+}
+
 const results = await Promise.allSettled(feeds.map(fetchFeed));
 for (const [index, result] of results.entries()) {
   if (result.status === "rejected") console.error(`${feeds[index].category}: ${result.reason.message}`);
@@ -381,6 +449,7 @@ const snapshot = {
   articles: Array.from(unique.values()).sort((left, right) => new Date(right.published) - new Date(left.published))
 };
 await enrichShareMetadata(snapshot.articles);
+await downloadCardImages(snapshot.articles);
 await writeFile(outputPath, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
 const withMedia = snapshot.articles.filter((article) => article.image || article.video).length;
 console.log(`Snapshot atualizado: ${snapshot.articles.length} notícias de ${results.filter((result) => result.status === "fulfilled").length}/${feeds.length} feeds; ${withMedia} matérias com foto/vídeo.`);
