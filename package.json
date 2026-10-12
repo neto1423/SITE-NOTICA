@@ -1,0 +1,13 @@
+{
+  "name": "giro-360",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PWA de notícias com feeds RSS e notificações Web Push.",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "web-push": "^3.6.7"
+  }
+}

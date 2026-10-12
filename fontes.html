@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#071b2d" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="GIRO 360" />
+    <title>Fontes monitoradas — GIRO 360</title>
+    <meta name="description" content="Gerencie fontes de notícias do GIRO 360." />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
+    <link rel="stylesheet" href="styles.css?v=20261012-24" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="topbar-inner">
+          <a href="/" class="nav-link nav-link-back">
+            <span class="nav-icon">←</span>
+            <span>Voltar</span>
+          </a>
+
+          <h1>Fontes</h1>
+
+          <button class="icon-button" id="toggleNotifications" aria-label="Notificações">
+            <span class="bell">🔔</span>
+            <span class="badge" id="notificationsBadge">0</span>
+          </button>
+        </div>
+      </header>
+
+      <main class="content">
+        <section id="sourceView" class="view-section">
+          <header class="zone-heading">
+            <p class="eyebrow">GIRO 360 · PERFIS</p>
+            <h2>Portais</h2>
+            <p>Cadastre sites e feeds RSS para monitorar notícias reais.</p>
+          </header>
+          <section id="portalProfiles" class="portal-profiles" aria-label="Portais cadastrados"></section>
+          <section id="portalStories" class="news-list" aria-live="polite"></section>
+          <form id="sourceForm" class="source-form">
+            <fieldset class="source-type-picker">
+              <legend>Tipo de fonte para adicionar</legend>
+              <button class="source-type active" type="button" data-source-type="site">Site</button>
+              <button class="source-type" type="button" data-source-type="rss">Feed RSS</button>
+              <button class="source-type" type="button" data-source-type="instagram">Instagram</button>
+              <button class="source-type" type="button" data-source-type="tiktok">TikTok</button>
+            </fieldset>
+            <label class="source-batch-label" for="sourceInput">Adicione vários itens separados por vírgula, ponto e vírgula ou quebra de linha</label>
+            <textarea id="sourceInput" rows="3" placeholder="https://portal.com, https://outro.com" aria-label="Perfis ou endereços para adicionar em lote" aria-describedby="sourceHelp sourceFormStatus"></textarea>
+            <p id="sourceHelp" class="helper-text">Feeds RSS/Atom cadastrados são consultados pelo servidor a cada minuto; sites sem feed compatível não são monitorados. Perfis do Instagram e TikTok adicionados aqui são atalhos, não geram coleta nem alertas: isso exige integração oficial autorizada. O app mostra o conteúdo publicado no feed, não copia matérias completas protegidas. Para canais do YouTube, use https://www.youtube.com/feeds/videos.xml?channel_id=ID_DO_CANAL. Vídeos do g1 não entram na playlist porque o player deles não permite reprodução incorporada.</p>
+            <p id="sourceFormStatus" class="source-form-status" role="status" aria-live="polite"></p>
+            <button class="source-submit" type="submit">Adicionar em lote</button>
+          </form>
+          <ul id="sourcesList" class="source-list" aria-live="polite"></ul>
+        </section>
+      </main>
+    </div>
+
+    <aside id="notificationPanel" class="notification-panel hidden" aria-live="polite">
+      <div class="panel-header">
+        <h3>Notificações</h3>
+        <button class="close-panel" id="closeNotifications" aria-label="Fechar notificações">×</button>
+      </div>
+      <div class="notification-settings">
+        <p id="pushStatus" role="status">Alertas do iPhone desativados.</p>
+        <button class="push-toggle" id="pushToggle" type="button" aria-pressed="false">Ativar notificações</button>
+      </div>
+      <ul id="notificationList" class="notification-list"></ul>
+    </aside>
+
+    <script src="app.js?v=20261012-24"></script>
+  </body>
+</html>

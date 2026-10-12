@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Central de Notícias — GIRO 360</title>
+    <meta
+      name="description"
+      content="Notícias atualizadas a cada minuto do Alagoas, do Brasil e da Zona da Mata."
+    />
+    <meta name="theme-color" content="#071b2d" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="GIRO 360" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
+    <link rel="stylesheet" href="styles.css?v=20261012-24" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="topbar-inner">
+          <span></span>
+
+          <h1>GIRO 360</h1>
+
+          <button class="icon-button" id="toggleNotifications" aria-label="Notificações">
+            <span class="bell">🔔</span>
+            <span class="badge" id="notificationsBadge">0</span>
+          </button>
+        </div>
+      </header>
+
+      <main class="content">
+        <section class="hero">
+          <p class="eyebrow">Central de Notícias</p>
+          <h2>Tudo o que foi encontrado, em um só lugar.</h2>
+        </section>
+
+        <nav class="main-tabs" aria-label="Seções do GIRO 360">
+          <button class="main-tab active" type="button" data-view="news">Notícias</button>
+          <button class="main-tab" type="button" data-view="zone">
+            Zona da Mata <span class="zone-count" id="zoneNotificationsBadge">0</span>
+          </button>
+          <button class="main-tab" type="button" data-view="sources">Portais</button>
+        </nav>
+
+        <section id="newsView" class="view-section">
+          <p class="sync-status" id="syncStatus" role="status">Conectando aos portais…</p>
+          <label class="news-search">
+            <span aria-hidden="true">⌕</span>
+            <input id="newsSearch" type="search" placeholder="Buscar notícia, portal ou município" autocomplete="off" />
+          </label>
+          <nav class="status-tabs" aria-label="Filtros de notícias">
+          <button class="tab active" data-filter="all">Todas</button>
+          <button class="tab" data-filter="new">Novas</button>
+          <button class="tab" data-filter="read">Lidas</button>
+          <button class="tab" data-filter="reviewed">Revisadas</button>
+          <button class="tab" data-filter="shared">Compartilhadas</button>
+          <button class="tab" data-filter="saved">Salvas</button>
+          </nav>
+
+          <section id="newsList" class="news-list" aria-live="polite"></section>
+        </section>
+
+        <section id="zoneView" class="view-section hidden">
+          <header class="zone-heading">
+            <p class="eyebrow">GIRO 360 · ALAGOAS</p>
+            <h2>Zona da Mata</h2>
+            <p>Notícias da região em um feed para rolar com o dedo.</p>
+          </header>
+          <section id="zoneFeed" class="zone-feed" aria-live="polite"></section>
+        </section>
+
+        <section id="videoView" class="view-section hidden">
+          <header class="zone-heading">
+            <p class="eyebrow">GIRO 360 · VÍDEOS</p>
+            <h2>Vídeos</h2>
+            <p>Uma playlist em um único player, adaptado para vídeos verticais e horizontais. Deslize pela lateral ou use as setas para trocar de vídeo.</p>
+          </header>
+          <section id="videoFeed" class="zone-feed video-feed" aria-live="polite"></section>
+        </section>
+
+        <section id="sourceView" class="view-section hidden">
+          <header class="zone-heading">
+            <p class="eyebrow">GIRO 360 · PERFIS</p>
+            <h2>Portais</h2>
+            <p>Toque em um perfil para ver as notícias daquele portal.</p>
+          </header>
+          <section id="portalProfiles" class="portal-profiles" aria-label="Portais cadastrados"></section>
+          <section id="portalStories" class="news-list" aria-live="polite"></section>
+          <form id="sourceForm" class="source-form">
+            <fieldset class="source-type-picker">
+              <legend>Tipo de fonte para adicionar</legend>
+              <button class="source-type active" type="button" data-source-type="instagram">Instagram</button>
+              <button class="source-type" type="button" data-source-type="tiktok">TikTok</button>
+              <button class="source-type" type="button" data-source-type="site">Site</button>
+              <button class="source-type" type="button" data-source-type="rss">Feed RSS</button>
+            </fieldset>
+            <label class="source-batch-label" for="sourceInput">Adicione vários itens separados por vírgula, ponto e vírgula ou quebra de linha</label>
+            <textarea id="sourceInput" rows="3" placeholder="@perfil1, @perfil2" aria-label="Perfis ou endereços para adicionar em lote" aria-describedby="sourceHelp sourceFormStatus"></textarea>
+            <p id="sourceHelp" class="helper-text">Feeds RSS/Atom cadastrados são consultados pelo servidor a cada minuto; sites sem feed compatível não são monitorados. Perfis do Instagram e TikTok adicionados aqui são atalhos, não geram coleta nem alertas: isso exige integração oficial autorizada. O app mostra o conteúdo publicado no feed, não copia matérias completas protegidas. Para canais do YouTube, use https://www.youtube.com/feeds/videos.xml?channel_id=ID_DO_CANAL. Vídeos do g1 não entram na playlist porque o player deles não permite reprodução incorporada.</p>
+            <p id="sourceFormStatus" class="source-form-status" role="status" aria-live="polite"></p>
+            <button class="source-submit" type="submit">Adicionar em lote</button>
+          </form>
+          <ul id="sourcesList" class="source-list" aria-live="polite"></ul>
+        </section>
+      </main>
+    </div>
+
+    <aside id="notificationPanel" class="notification-panel hidden" aria-live="polite">
+      <div class="panel-header">
+        <h3>Notificações</h3>
+        <button class="close-panel" id="closeNotifications" aria-label="Fechar notificações">×</button>
+      </div>
+      <div class="notification-settings">
+        <p id="pushStatus" role="status">Alertas do iPhone desativados.</p>
+        <button class="push-toggle" id="pushToggle" type="button" aria-pressed="false">Ativar notificações</button>
+      </div>
+      <ul id="notificationList" class="notification-list"></ul>
+    </aside>
+
+    <dialog id="storyDialog" class="story-dialog" aria-labelledby="storyDialogTitle">
+      <div class="story-dialog-header">
+        <p id="storyDialogSource"></p>
+        <button class="close-panel" id="closeStoryDialog" type="button" aria-label="Fechar notícia">×</button>
+      </div>
+      <article id="storyDialogContent" class="story-dialog-content"></article>
+    </dialog>
+
+    <nav class="bottom-nav" aria-label="Navegação inferior">
+      <button class="bottom-nav-item active" type="button" data-view="news">
+        <span aria-hidden="true">⌂</span><span>Destaques</span>
+      </button>
+      <button class="bottom-nav-item" type="button" data-view="zone">
+        <span aria-hidden="true">⌖</span><span>Região</span>
+      </button>
+      <button class="bottom-nav-item" type="button" data-view="videos">
+        <span aria-hidden="true">▶</span><span>Vídeos</span>
+      </button>
+      <button class="bottom-nav-item" type="button" data-view="sources">
+        <span aria-hidden="true">▤</span><span>Portais</span>
+      </button>
+    </nav>
+
+    <script src="app.js?v=20261012-24"></script>
+  </body>
+</html>
