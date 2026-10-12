@@ -42,6 +42,7 @@ const state = {
   loading: false,
   installedPrompt: null,
   readerReturnFocus: null,
+  readerArticle: null,
   cardArticle: null,
   cardTemplate: { ...DEFAULT_CARD_TEMPLATE },
   cardImageOverride: "",
@@ -76,6 +77,7 @@ const elements = {
   readerBody: document.querySelector("#reader-body"),
   readerOriginal: document.querySelector("#reader-original"),
   readerShare: document.querySelector("#reader-share-whatsapp"),
+  readerCreateCard: document.querySelector("#reader-create-card"),
   cardStudio: document.querySelector("#card-studio"),
   cardSearch: document.querySelector("#card-news-search"),
   cardResults: document.querySelector("#card-news-results"),
@@ -90,6 +92,8 @@ const elements = {
   cardElementUpload: document.querySelector("#card-element-upload"),
   cardImageUpload: document.querySelector("#card-image-upload"),
   cardLayers: document.querySelector("#card-layer-list"),
+  cardLayerSendBack: document.querySelector("#card-layer-send-back"),
+  cardLayerBringFront: document.querySelector("#card-layer-bring-front"),
   cardSave: document.querySelector("#card-save-template"),
   cardReset: document.querySelector("#card-reset-template"),
   cardDownload: document.querySelector("#card-download"),
@@ -207,6 +211,32 @@ function renderCardNewsResults() {
   `).join("");
 }
 
+function openCardStudioForArticle(article) {
+  if (elements.reader && !elements.reader.hidden) {
+    elements.reader.hidden = true;
+    elements.readerMedia.replaceChildren();
+    document.querySelector(".app-shell").inert = false;
+    document.body.classList.remove("reader-open");
+    state.readerReturnFocus = null;
+    state.readerArticle = null;
+    if (history.state?.giroReader && location.hash === "#materia") {
+      history.replaceState(null, "", `${location.pathname}${location.search}`);
+    }
+  }
+  if (article) {
+    state.cardArticle = article;
+    state.cardImageOverride = "";
+    elements.cardImageUpload.value = "";
+    elements.cardSearch.value = article.title;
+    renderCardNewsResults();
+    renderCardPreview();
+  }
+  elements.cardStudio.scrollIntoView({ behavior: "smooth", block: "start" });
+  setCardStatus(article
+    ? "Notícia selecionada. O card usa seu layout salvo; ajuste se quiser e baixe o PNG."
+    : "Selecione uma notícia para configurar e gerar o card.");
+}
+
 function wrapCanvasText(context, text, maxWidth, maxLines) {
   const words = String(text || "").trim().split(/\s+/).filter(Boolean);
   const lines = [];
@@ -267,6 +297,7 @@ function cardLayerLabel(layer) {
 
 function renderCardLayers() {
   const order = cardLayerOrder();
+  const selectedIndex = order.indexOf(state.cardSelectedLayer);
   elements.cardLayers.innerHTML = order.map((layer, index) => `
     <li class="card-layer-row${layer === state.cardSelectedLayer ? " is-selected" : ""}">
       <button class="card-layer-select" type="button" data-card-layer="${escapeHtml(layer)}" aria-pressed="${layer === state.cardSelectedLayer}">
@@ -277,6 +308,8 @@ function renderCardLayers() {
       ${layer.startsWith("asset:") ? `<button class="card-layer-remove" type="button" data-card-layer-remove="${escapeHtml(layer.slice(6))}" aria-label="Remover ${escapeHtml(cardLayerLabel(layer))}">×</button>` : ""}
     </li>
   `).join("");
+  elements.cardLayerSendBack.disabled = selectedIndex <= 0;
+  elements.cardLayerBringFront.disabled = selectedIndex < 0 || selectedIndex >= order.length - 1;
 }
 
 function loadCardImage(source) {
@@ -667,6 +700,8 @@ function setupCardStudio() {
       renderCardLayers();
     }
   });
+  elements.cardLayerSendBack.addEventListener("click", () => moveCardLayer(state.cardSelectedLayer, -1));
+  elements.cardLayerBringFront.addEventListener("click", () => moveCardLayer(state.cardSelectedLayer, 1));
   elements.cardCanvas.addEventListener("pointerdown", (event) => {
     const bounds = elements.cardCanvas.getBoundingClientRect();
     const x = (event.clientX - bounds.left) * (elements.cardCanvas.width / bounds.width);
@@ -711,9 +746,7 @@ function setupCardStudio() {
   const stopCardDrag = () => { state.cardDrag = null; };
   elements.cardCanvas.addEventListener("pointerup", stopCardDrag);
   elements.cardCanvas.addEventListener("pointercancel", stopCardDrag);
-  document.querySelector("#bottom-cards").addEventListener("click", () => {
-    elements.cardStudio.scrollIntoView({ behavior: "smooth", block: "start" });
-  });
+  document.querySelector("#bottom-cards").addEventListener("click", () => openCardStudioForArticle());
 }
 
 async function refreshNews() {
@@ -819,6 +852,7 @@ function watchImageErrors(container) {
 
 function openArticle(article, trigger) {
   if (!article) return;
+  state.readerArticle = article;
   const link = safeUrl(article.link);
   elements.readerCategory.textContent = categoryFor(article);
   elements.readerTitle.textContent = article.title;
@@ -847,6 +881,7 @@ function closeArticle() {
   document.body.classList.remove("reader-open");
   state.readerReturnFocus?.focus?.();
   state.readerReturnFocus = null;
+  state.readerArticle = null;
 }
 
 function handleReaderClose() {
@@ -878,6 +913,7 @@ function renderNews() {
         ${article.description ? `<p class="story-description">${escapeHtml(article.description)}</p>` : ""}
         <div class="story-footer">
           <button class="read-link" type="button" data-open-story="${index}">Ler matéria ↗</button>
+          <button class="story-create-card" type="button" data-create-card="${index}">Criar card</button>
           <a class="story-share" href="${escapeHtml(whatsappShareUrl(article))}" target="_blank" rel="noopener noreferrer" aria-label="Compartilhar ${escapeHtml(article.title)} no WhatsApp">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.4 11.7a8.4 8.4 0 0 1-12.4 7.4L3 20l.9-4.8A8.4 8.4 0 1 1 20.4 11.7Z"></path><path d="M8 8.1c.2-.4.4-.4.7-.4h.4c.2 0 .3.1.4.4l.7 1.7c.1.2 0 .4-.1.6l-.5.6c-.2.2-.2.3-.1.5.6 1 1.4 1.8 2.5 2.3.2.1.4.1.5-.1l.7-.8c.2-.2.4-.2.6-.1l1.7.8c.2.1.4.2.4.4 0 .2-.1 1-.6 1.4-.5.5-1.4.7-2 .6-.6-.1-1.5-.4-2.5-.9a9.4 9.4 0 0 1-3.5-3.1c-.9-1.2-1.2-2.2-1.3-2.7-.1-.6.2-1.2.5-1.5Z"></path></svg>
             <span>WhatsApp</span>
@@ -999,6 +1035,11 @@ setupCardStudio();
 document.querySelector("#whatsapp-link").href = `https://wa.me/?text=${encodeURIComponent(`Confira o Giro 360, sua central de notícias: ${location.href}`)}`;
 elements.feed.addEventListener("click", (event) => {
   if (event.target.closest("a")) return;
+  const createCardButton = event.target.closest("[data-create-card]");
+  if (createCardButton) {
+    openCardStudioForArticle(state.visibleArticles[Number(createCardButton.dataset.createCard)]);
+    return;
+  }
   const trigger = event.target.closest("[data-open-story]");
   const card = event.target.closest(".news-card[data-story-index]");
   if (!trigger && !card) return;
@@ -1006,6 +1047,7 @@ elements.feed.addEventListener("click", (event) => {
   const article = state.visibleArticles[index];
   openArticle(article, trigger);
 });
+elements.readerCreateCard.addEventListener("click", () => openCardStudioForArticle(state.readerArticle));
 elements.readerClose.addEventListener("click", handleReaderClose);
 window.addEventListener("popstate", () => {
   if (!elements.reader.hidden) closeArticle();
